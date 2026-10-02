@@ -1,0 +1,9 @@
+{
+  "name": "open-claude",
+  "version": "0.1.0",
+  "description": "A vim-style status bar in the Claude Code footer: editor mode, model, effort, cursor and usage.",
+  "author": {
+    "name": "Erick Fuga"
+  },
+  "types": "./types/index.d.ts"
+}
