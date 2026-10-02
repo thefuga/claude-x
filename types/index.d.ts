@@ -16,6 +16,10 @@ export type Reading = { columns: number; of: number }
 
 export type Usage = { tokens: number | null; percent: number | null; usd: number | null }
 
+// The working copy's git state: the branch HEAD is on (`detached@<commit>` on none), and the lines
+// added and deleted in the tracked files since the last commit.
+export type Git = { branch: string; additions: number; deletions: number }
+
 // What the command line said last: a command's answer, or why it would not run.
 export type Echo = { text: string; isWarning: boolean }
 
@@ -49,6 +53,7 @@ declare module 'claude-code' {
       title: string | null
       transcript: string | null
       usage: Usage
+      git: Git | null
       // What is typed in the command line while it is open, and what it said last.
       command: string | null
       echo: Echo | null

@@ -97,6 +97,10 @@ type World = {
   aborted: string[]
   // Whether the band above the prompt still has the keyboard, as the engine answers a focus.
   hasKeyboard: boolean
+  // The working copy as git answers: the branch HEAD is on (null outside a repository), and the
+  // lines `git diff --numstat` prints.
+  branch: string | null
+  numstat: string
   // What the mod wrote to the debug log: what went wrong in it and was passed over.
   logs: string[]
 }
@@ -116,6 +120,8 @@ const world = (on: On): World => {
     aborted: [],
     hasKeyboard: true,
     logs: [],
+    branch: null,
+    numstat: '',
   }
 
   mock.env(on, { HOME: '/home/me' })
@@ -133,6 +139,7 @@ const world = (on: On): World => {
   on('session.version', () => ({ value: { version: held.version } }))
   on('session.turns', () => ({ value: 0 }))
   on('classic.SessionStart', () => ({}))
+  on('classic.PostToolUse', () => ({}))
   on('classic.UserPromptSubmit', () => ({}))
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.abort', ($, e) => {
@@ -199,15 +206,23 @@ const world = (on: On): World => {
 
     return <Box />
   })
-  on('process.run', ($, e) => ({
-    value: {
-      exitCode: 0,
-      stdout: e.argv.includes(EFFORT_ENTRY) ? held.announced : TITLES,
-      stderr: '',
-      isStdoutTruncated: false,
-      isStderrTruncated: false,
-    },
-  }))
+  on('process.run', ($, e) => {
+    const ran = (exitCode: number, stdout: string) => ({
+      value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
+    })
+
+    if (e.argv[0] === 'git') {
+      const outside = held.branch === null ? ran(128, '') : null
+
+      if (e.argv.includes('symbolic-ref')) {
+        return outside ?? ran(0, `${held.branch}\n`)
+      }
+
+      return outside ?? (e.argv.includes('diff') ? ran(0, held.numstat) : ran(128, ''))
+    }
+
+    return ran(0, e.argv.includes(EFFORT_ENTRY) ? held.announced : TITLES)
+  })
 
   return held
 }
@@ -598,6 +613,33 @@ describe('status line', () => {
     await above.input({ key: 'command:0', text: 'compact' })
 
     expect(held.ran).toEqual(['compact'])
+  })
+
+  test('shows the branch and the lines changed before the usage, and reads them again after a tool call', async ($, on) => {
+    const clock = mock.clock(on)
+    const held = world(on)
+    held.branch = 'feat/footer-git'
+    held.numstat = '3\t1\tnotes.txt\n-\t-\tlogo.png\n'
+    await $.session.start(START)
+    await clock.settle()
+    const left = await $.ui.mount({ ...BLOCK, props: CYCLING })
+    const texts = async () => (await left.findAll({ type: 'Text' })).map(text => text.text)
+
+    expect(await texts()).toContain('\uf418 feat/footer-git')
+    expect((await left.find({ type: 'Text', text: '+3' }))?.props).toMatchObject({ color: '#b8bb26' })
+    expect((await left.find({ type: 'Text', text: '-1' }))?.props).toMatchObject({ color: '#fb4934' })
+
+    held.numstat = ''
+    await $.classic.PostToolUse({ tool_name: 'Edit', tool_input: {}, tool_response: {}, tool_use_id: 'toolu_1' })
+    await clock.settle()
+
+    expect(await texts(), 'a clean working copy has its branch alone').toContain('\uf418 feat/footer-git')
+    expect(await left.find({ type: 'Text', text: '+3' })).toBeUndefined()
+
+    held.branch = null
+    await clock.advance(5000)
+
+    expect(await texts(), 'outside a repository, nothing').not.toContain('\uf418 feat/footer-git')
   })
 
   test('closes the command line when Escape hands the keys back, and ends a running turn to quit by force', async ($, on) => {

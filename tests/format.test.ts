@@ -20,6 +20,8 @@ import {
   gutterLabel,
   isBelieved,
   isInserting,
+  fitGit,
+  gitCells,
   lineOf,
   locate,
   menuOf,
@@ -68,6 +70,7 @@ const BLOCK = {
   command: null,
   echo: null,
   menu: null,
+  git: null,
 }
 const rowsOf = (block: Parameters<typeof fitBlock>[0]) => fitBlock(block).rows ?? []
 
@@ -208,13 +211,15 @@ describe('format', () => {
     const cursor = { line: 2, column: 7, percent: 67 }
     const usage = { tokens: 19_700, percent: 2, usd: 0.13 }
 
-    expect(fitRight(170, [], cursor, usage)).toEqual({ cursor: 'Ln 2, Col 7 · 67%', usage: '19.7K (2%) · $0.13' })
+    expect(fitRight(170, [], cursor, usage)).toEqual({ cursor: 'Ln 2, Col 7 · 67%', usage: '19.7K (2%) · $0.13', git: '' })
+    expect(fitRight(170, [], cursor, usage, { branch: 'main', additions: 94, deletions: 64 }).git).toBe('\uf418 main +94 -64')
+    expect(fitRight(70, [], cursor, usage, { branch: 'main', additions: 94, deletions: 64 }).git, 'no room for it').toBe('')
     expect(fitRight(170, ['focus', 'memory paused'], cursor, usage).cursor).toBe(
       'focus & memory paused · Ln 2, Col 7 · 67%',
     )
     expect(fitRight(90, ['focus'], cursor, usage).cursor).toBe('Ln 2, Col 7 · 67%')
-    expect(fitRight(70, [], cursor, usage)).toEqual({ cursor: '2:7 · 67%', usage: '19.7K (2%)' })
-    expect(fitRight(46, [], cursor, usage)).toEqual({ cursor: '2:7', usage: '2%' })
+    expect(fitRight(70, [], cursor, usage)).toEqual({ cursor: '2:7 · 67%', usage: '19.7K (2%)', git: '' })
+    expect(fitRight(46, [], cursor, usage)).toEqual({ cursor: '2:7', usage: '2%', git: '' })
     expect(fitRight(170, [], ORIGIN, NO_USAGE).usage).toBe('0 (0%)')
   })
 
@@ -465,6 +470,26 @@ describe('format', () => {
     expect(long?.width).toBe(60)
     expect(long?.rows[0]?.name).toHaveLength(24)
     expect(long?.rows[0]?.description).toHaveLength(60 - 24 - 5)
+  })
+
+  test('fits the branch and the counts before the usage, letting go of the usage first, then the counts', () => {
+    const git = { branch: 'feat/footer-git', additions: 94, deletions: 64 }
+    const usage = '62.6K (6%) · $0.58'
+
+    expect(fitGit(80, git, usage)).toEqual({ git: { branch: 'feat/footer-git', added: '+94', deleted: '-64' }, usage })
+    expect(fitGit(80, { ...git, additions: 0 }, usage).git, 'a count of nothing is left out').toEqual({
+      branch: 'feat/footer-git',
+      added: '',
+      deleted: '-64',
+    })
+    expect(fitGit(30, git, usage)).toEqual({ git: { branch: 'feat/footer-git', added: '+94', deleted: '-64' }, usage: '' })
+    expect(fitGit(20, git, usage)).toEqual({ git: { branch: 'feat/footer-git', added: '', deleted: '' }, usage: '' })
+    expect(fitGit(12, git, usage).git?.branch, 'cut to the room').toBe('feat/foot…')
+    expect(fitGit(10, git, usage).git?.branch, 'but no shorter than eight cells').toBe('feat/fo…')
+    expect(fitGit(9, git, usage)).toEqual({ git: null, usage: '' })
+    expect(fitGit(80, { ...git, branch: 'a-branch-with-a-name-longer-than-most' }, usage).git?.branch).toBe('a-branch-with-a-name-lo…')
+    expect(fitGit(80, null, usage)).toEqual({ git: null, usage })
+    expect(gitCells({ branch: 'main', added: '+94', deleted: '-64' }), '').toBe(' main +94 -64'.length + 1)
   })
 
   test('gives the command line the row under the bar, up to the usage', () => {

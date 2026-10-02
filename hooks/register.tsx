@@ -10,7 +10,7 @@ import type {
   Timer,
 } from 'claude-code'
 
-import type { Box, MenuItem, Usage } from '../types'
+import type { Box, Git, MenuItem, Usage } from '../types'
 import { HELP, NEXT, PREVIOUS, SAID, commandOf, completionsOf, draftKey, fieldKey, isField, keptDraft } from './commandline/commands'
 import {
   EDGE,
@@ -41,6 +41,7 @@ import {
   transcriptPath,
   verdictsOf,
 } from './statusline/format'
+import { BRANCH, COMMIT, DIFFSTAT, GIT_ENV, branchOf, diffstatOf } from './statusline/git'
 import { theme } from './statusline/theme'
 import { CommandField, StatusBlock, StatusNote, StatusRow } from './statusline/view'
 import { layOut } from './statusline/wrap'
@@ -69,6 +70,10 @@ const FIELD_VALUE_MS = 30
 const MENU_KEPT = 16
 // A prompt box is bound a moment after its session starts: how long a saved draft waits for one.
 const BOX_WAITS = [0, 100, 400, 1500]
+// How often the working copy's git state is read besides after each tool call, as opencode.vim reads
+// it, and how long one git command may take.
+const GIT_MS = 5000
+const GIT_TIMEOUT_MS = 1500
 
 const input = atom({ plugin: 'open-claude', key: 'input' } as const, ORIGIN)
 const box = atom({ plugin: 'open-claude', key: 'box' } as const, UNPLACED)
@@ -88,6 +93,7 @@ const command = atom({ plugin: 'open-claude', key: 'command' } as const, null)
 const echo = atom({ plugin: 'open-claude', key: 'echo' } as const, null)
 const field = atom({ plugin: 'open-claude', key: 'commandField' } as const, FIRST_FIELD)
 const menu = atom({ plugin: 'open-claude', key: 'menu' } as const, null)
+const git = atom({ plugin: 'open-claude', key: 'git' } as const, null)
 
 let poll: { timer: Timer; ms: number } | undefined
 let settle: Timer | undefined
@@ -114,6 +120,11 @@ let isWorking = false
 let isStarted = false
 // Whether a draft loaded back is painted as a typed one is.
 let isPainted = true
+// Whether the footer shows the git state, the state last drawn, and a read of it under way, with
+// whether another was asked for meanwhile.
+let hasGit = true
+let seenGit: string | undefined
+let gitRead: { isAgain: boolean } | undefined
 let band: { maxRows: number; height: number } | undefined
 // The plugins with a status line pinned under the prompt: a row each, between its rule and the footer.
 let pinned = new Set<string>()
@@ -787,6 +798,58 @@ const forgetDraft = async ($: EngineInterface) => {
   isStarted = true
 }
 
+// One git command; null where git is missing, refuses to run or takes too long.
+const runGit = async ($: EngineInterface, argv: readonly string[]) => {
+  try {
+    return await $.process.run(argv, { env: GIT_ENV, timeoutMs: GIT_TIMEOUT_MS })
+  } catch {
+    return null
+  }
+}
+
+// The branch and the counts, read in the session's folder as opencode.vim reads them; null outside
+// a repository. A repository with no commit yet has its branch and no counts.
+const readGit = async ($: EngineInterface): Promise<Git | null> => {
+  const onBranch = await runGit($, BRANCH)
+  const onCommit = onBranch !== null && onBranch.exitCode !== 0 ? await runGit($, COMMIT) : null
+  const branch = branchOf(onBranch?.exitCode === 0 ? onBranch.stdout : null, onCommit?.exitCode === 0 ? onCommit.stdout : null)
+
+  if (branch === null) {
+    return null
+  }
+
+  const diff = await runGit($, DIFFSTAT)
+
+  return { branch, ...(diff?.exitCode === 0 ? diffstatOf(diff.stdout) : { additions: 0, deletions: 0 }) }
+}
+
+// Asks while a read is under way come to one more read once it is done.
+const syncGit = async ($: EngineInterface) => {
+  if (gitRead !== undefined) {
+    gitRead.isAgain = true
+
+    return
+  }
+
+  const reading = { isAgain: true }
+  gitRead = reading
+
+  try {
+    while (reading.isAgain) {
+      reading.isAgain = false
+      const next = await readGit($)
+      const seen = JSON.stringify(next)
+
+      if (seen !== seenGit) {
+        seenGit = seen
+        await update($, git, () => next)
+      }
+    }
+  } finally {
+    gitRead = undefined
+  }
+}
+
 // A command line the mod left open before it was loaded again: nothing here knows of it, and what
 // it showed stays in the session's state, so it is closed.
 const closeStaleLine = async ($: EngineInterface) => {
@@ -811,12 +874,21 @@ const boot = async ($: EngineInterface) => {
       isStarted = isStarted || turns > 0
     })),
     quietly($, 'command', closeStaleLine($)),
+    quietly($, 'git', hasGit ? syncGit($) : update($, git, () => null)),
   ])
+
+  // Files change between tool calls too, from an editor or a terminal of the person's own.
+  if (hasGit) {
+    $.clock.every(GIT_MS, () => {
+      void quietly($, 'git', syncGit($))
+    })
+  }
 }
 
 export const register: Register = (on, options) => {
   const minRows = minRowsOf(options.minLines)
   isPainted = options.syntax !== false
+  hasGit = options.git !== false
 
   // Only the fullscreen terminal lets a site draw outside itself, and only there is the box laid out
   // as the overlay expects.
@@ -874,6 +946,11 @@ export const register: Register = (on, options) => {
 
     if (e.agent_id === undefined && level !== null) {
       void quietly($, 'effort', setEffort($, level))
+    }
+
+    // A tool call may have changed files, an agent's as well as the session's own.
+    if (hasGit) {
+      void quietly($, 'git', syncGit($))
     }
 
     return next(e)
@@ -1043,7 +1120,7 @@ export const register: Register = (on, options) => {
       return next(e)
     }
 
-    const [vim, id, level, at, spent, typed, answer, offered] = await Promise.all([
+    const [vim, id, level, at, spent, typed, answer, offered, repository] = await Promise.all([
       read($, isVim),
       read($, model),
       read($, effort),
@@ -1052,6 +1129,7 @@ export const register: Register = (on, options) => {
       read($, command),
       read($, echo),
       read($, menu),
+      read($, git),
     ])
     const width = e.viewport?.columns ?? WIDE
     const label = editorMode(e.props.hint, vim)
@@ -1091,6 +1169,7 @@ export const register: Register = (on, options) => {
       command: typed,
       echo: answer,
       menu: offered,
+      git: repository,
     })
 
     marked = block.read
@@ -1100,10 +1179,11 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'SessionMode' }, async ($, e) => {
     const width = e.viewport?.columns ?? WIDE
-    const [at, spent] = await Promise.all([read($, input), read($, usage)])
-    const { cursor, usage: used } = fitRight(width, e.props.modes, at, spent)
+    const [at, spent, repository] = await Promise.all([read($, input), read($, usage), read($, git)])
+    const { cursor, usage: used, git: branch } = fitRight(width, e.props.modes, at, spent, repository)
+    const note = [cursor, branch, used].filter(text => text !== '').join(' · ')
 
-    // The block has the cursor and the usage; the engine's own labels keep this site.
-    return StatusNote($.ui.resolve(e), overlays(e.surface, e.viewport) ? e.props.modes.join(' & ') : `${cursor} · ${used}`)
+    // The block has the cursor, the git state and the usage; the engine's own labels keep this site.
+    return StatusNote($.ui.resolve(e), overlays(e.surface, e.viewport) ? e.props.modes.join(' & ') : note)
   })
 }

@@ -1,4 +1,4 @@
-import type { Box, Cursor, Draft, Echo, FieldState, Menu, Reading, Usage } from '../../types'
+import type { Box, Cursor, Draft, Echo, FieldState, Git, Menu, Reading, Usage } from '../../types'
 import { MAX_LENGTH, cursorIn, isPlain, layOut } from './wrap'
 import type { Row } from './wrap'
 
@@ -8,7 +8,11 @@ export type Segments = { mode: string; permission: string; model: string; provid
 
 export type Left = Segments & { title: string }
 
-export type Right = { cursor: string; usage: string }
+export type Right = { cursor: string; usage: string; git: string }
+
+// The git part of the footer's last row as drawn: the branch after its icon, and each count that is
+// not zero.
+export type GitPart = { branch: string; added: string; deleted: string }
 
 // One row of the draft as it is drawn over: `text` when the row's text is drawn too (the engine's
 // own shows through otherwise), the cell the fill starts at, and one cell of it left open for the
@@ -45,6 +49,7 @@ export type Block = {
   label: string
   line: Line | null
   menu: MenuBlock | null
+  git: GitPart | null
   usage: string
   // The blank cells between the bar's two halves, drawn so that they cover the engine's mark.
   gap: number
@@ -373,6 +378,40 @@ export const fitLeft = ({ title, ...facts }: Facts & { title: string | null }): 
   return { ...richest(room, { ...facts, permission: '' }), title: fitTitle(room, title) }
 }
 
+// opencode.vim's icon for the branch, Nerd Font's `nf-oct-git_branch`, and how long a branch's
+// name is let stand: cut to fit, but not below the shorter.
+export const GIT_ICON = '\uf418'
+const MAX_BRANCH = 24
+const MIN_BRANCH = 8
+
+// The cells the git part takes: the icon, a space, the branch, and each count after a space.
+export const gitCells = (part: GitPart | null) =>
+  part === null ? 0 : 2 + part.branch.length + (part.added === '' ? 0 : part.added.length + 1) + (part.deleted === '' ? 0 : part.deleted.length + 1)
+
+// The git part and the usage in `room` cells, two between them. What gives way first is what
+// opencode.vim lets go first: the usage, then the counts, then the branch's length.
+export const fitGit = (room: number, git: Git | null, usage: string): { git: GitPart | null; usage: string } => {
+  if (git === null) {
+    return { git: null, usage }
+  }
+
+  const branch = truncate(git.branch, MAX_BRANCH)
+  const counted = { branch, added: git.additions > 0 ? `+${git.additions}` : '', deleted: git.deletions > 0 ? `-${git.deletions}` : '' }
+  const bare = { branch, added: '', deleted: '' }
+
+  if (gitCells(counted) + 2 + usage.length <= room) {
+    return { git: counted, usage }
+  }
+
+  const fitting = [counted, bare].find(part => gitCells(part) <= room)
+
+  if (fitting !== undefined) {
+    return { git: fitting, usage: '' }
+  }
+
+  return room - 2 >= MIN_BRANCH ? { git: { ...bare, branch: truncate(branch, room - 2) }, usage: '' } : { git: null, usage: '' }
+}
+
 // The menu shows this many completions at most, and stays this narrow.
 const MENU_ROWS = 8
 const MENU_NAME = 24
@@ -409,10 +448,16 @@ export const menuOf = (menu: Menu | null, rows: number, room: number): MenuBlock
 export const fitLine = (columns: number, mode: string, command: string | null, echo: Echo | null) =>
   lineOf(command, echo, columns - PILL_COLUMNS - RIGHT_COLUMNS[sizeOf(columns)] - mode.length - 4)
 
-export const fitRight = (columns: number, modes: readonly string[], cursor: Cursor, usage: Usage): Right => ({
-  cursor: labelled(columns, modes, cursor),
-  usage: usageText(usage, sizeOf(columns)),
-})
+// Where the footer is the engine's, one line of text: the git part where the screen is wide.
+export const fitRight = (columns: number, modes: readonly string[], cursor: Cursor, usage: Usage, git: Git | null = null): Right => {
+  const part = sizeOf(columns) === 'full' ? fitGit(MAX_BRANCH + 16, git, '').git : null
+
+  return {
+    cursor: labelled(columns, modes, cursor),
+    usage: usageText(usage, sizeOf(columns)),
+    git: part === null ? '' : [`${GIT_ICON} ${part.branch}`, part.added, part.deleted].filter(text => text !== '').join(' '),
+  }
+}
 
 // The tab row: the engine's own labels (`focus`, `memory paused`) keep their place where there is
 // room, and the tab is never cut shorter than `New session`.
@@ -516,6 +561,7 @@ type Drawn = Facts & {
   command: string | null
   echo: Echo | null
   menu: Menu | null
+  git: Git | null
 }
 
 const OPEN: BlockRow = { text: null, isDim: false, fillFrom: null, gap: null }
@@ -614,9 +660,12 @@ export const fitBlock = (facts: Drawn): Block => {
   // A draft that stood in the engine's rows a moment ago is taken at its own count, which is known
   // first. Otherwise never fewer rows than either count: what is drawn above the draft must not land on it.
   const count = Math.min(cap, laid !== null && box.isAligned ? laid.length : Math.max(box.rows ?? 1, laid?.length ?? 1))
-  const usage = usageText(facts.usage, sizeOf(columns))
   const shown = shownRows(laid, cap, facts)
   const pad = padRows(shown, cap, slot, facts)
+  // The last row: a cell, the copy of the mark, a cell at the least, the git part and the usage,
+  // and two cells to end it.
+  const right = fitGit(columns - (named === null ? 0 : named.mark.length + 1) - 4, facts.git, usageText(facts.usage, sizeOf(columns)))
+  const spent = gitCells(right.git) + (right.git !== null && right.usage !== '' ? 2 : 0) + right.usage.length
 
   return {
     columns,
@@ -625,12 +674,13 @@ export const fitBlock = (facts: Drawn): Block => {
     slot,
     mark: named?.mark ?? '',
     label: named?.label ?? '',
-    // A cell leads the row, one keeps the line off the usage, and two end the row.
-    line: lineOf(facts.command, facts.echo, columns - usage.length - 4),
+    // A cell leads the row, one keeps the line off what stands at its end, and two end the row.
+    line: lineOf(facts.command, facts.echo, columns - spent - 4),
     // From the row under the box's top rule down to the bar: the rows the box shows, its bottom
     // rule, the rows pinned under it, the rows added under those, and the bar's.
     menu: menuOf(facts.menu, (shown ?? 1) + 2 + box.under + pad, columns - 2 * EDGE),
-    usage,
+    git: right.git,
+    usage: right.usage,
     gap: Math.max(2, columns - (slot === 0 ? 0 : GUTTER + slot) - columnsOf(bar) - cursor.length - 2),
     rows: box.isPlaced ? blockRows(count, laid, room, facts) : null,
     numbers: lineNumbers(laid, cap, facts),

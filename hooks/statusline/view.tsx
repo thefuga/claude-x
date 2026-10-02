@@ -1,8 +1,8 @@
 import type { Elements } from 'claude-code'
 
-import { EDGE, GUTTER } from './format'
 import type { Menu } from '../../types'
-import type { Bar, Block, Left, Line, MenuBlock, Right, Segments, TabRow } from './format'
+import { EDGE, GIT_ICON, GUTTER, gitCells } from './format'
+import type { Bar, Block, GitPart, Left, Line, MenuBlock, Right, Segments, TabRow } from './format'
 import { badgeColor, permissionColor, theme } from './theme'
 
 type Table = Pick<Elements['terminal'], 'Box' | 'Text'>
@@ -114,6 +114,14 @@ export const StatusRow = (table: Table, row: Segments, line: Line | null, menu: 
   )
 }
 
+// The branch and the counts, before the usage at the end of the footer's last row.
+const gitTexts = ({ Text }: Table, { branch, added, deleted }: GitPart, isLast: boolean) => [
+  <Text color={theme.git.branch}>{`${GIT_ICON} ${branch}`}</Text>,
+  added !== '' && <Text color={theme.git.added}>{` ${added}`}</Text>,
+  deleted !== '' && <Text color={theme.git.deleted}>{` ${deleted}`}</Text>,
+  !isLast && <Text>{'  '}</Text>,
+]
+
 // The completions, in rows that end on the bar's, from the screen's edge, so that nothing of the
 // rows under them shows beside them, with the names under the name typed after the colon.
 const menuRows = ({ Box, Text }: Table, menu: MenuBlock, place: (top: number, column: number, width: number) => object, bottom: number) =>
@@ -182,12 +190,13 @@ export const StatusTabs = (table: Table, { columns, title, note }: TabRow) => {
 //
 // The footer's last row is the command line's, as the screen's last row is in vim: while it is open
 // or has something to say, that stands where the copy of the mark does.
-export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, mark, label, line, menu, usage, numbers, pad, under, isMeasured }: Block) => {
+export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, mark, label, line, menu, git, usage, numbers, pad, under, isMeasured }: Block) => {
   const { Box, Text, Client } = table
   const at: Place = (top, column, width) => ({ position: 'absolute', top, right: columns - EDGE - column - width, width })
   const start = slot === 0 ? 0 : GUTTER + slot
   const lead = mark === '' ? '' : ` ${mark}`
   const taken = line === null ? lead.length : line.text.length + (line.hasCursor ? 2 : 1)
+  const ending = gitCells(git) + (git !== null && usage !== '' ? 2 : 0) + usage.length
 
   return (
     <Box flexDirection="column" height={pad + 2}>
@@ -221,7 +230,8 @@ export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, 
         ) : (
           said(table, line)
         )}
-        <Text>{cells(columns - taken - usage.length - 2)}</Text>
+        <Text>{cells(columns - taken - ending - 2)}</Text>
+        {git !== null && gitTexts(table, git, usage === '')}
         <Text dimColor>{`${usage}  `}</Text>
       </Box>
       {menu !== null && menuRows(table, menu, at, pad)}

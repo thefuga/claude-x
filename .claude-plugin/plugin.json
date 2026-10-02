@@ -32,6 +32,12 @@
       "title": "A vim command line",
       "description": "The focus chord for the area above the prompt (Ctrl+X Tab, or the key bound to abovePrompt:focus) opens a command line in the footer's last row: :w saves the draft for the session, :e loads it back, :q quits, each with its ! to force, :wq saves and quits, and any other name runs the slash command of that name. Enter runs the line and Escape leaves it. Off draws no field and keeps no drafts.",
       "default": true
+    },
+    "git": {
+      "type": "boolean",
+      "title": "The git branch and the lines changed",
+      "description": "Show, before the usage at the end of the footer, the branch the working copy is on and the lines added and deleted in its tracked files since the last commit, as git diff --numstat HEAD counts them. Read every five seconds and after each tool call.",
+      "default": true
     }
   }
 }

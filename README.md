@@ -60,8 +60,10 @@ Three options, all on, all in `/config`:
 | Empty box | The mod's own line, naming the keys that work in the mode at the time; a prompt Claude Code suggests (`prompt.suggest`) takes its place. |
 | Session tab | The name given with `/rename` or `--name`, else the title Claude Code generates, both read from the transcript. |
 | Usage | `session.measure`: context tokens, how full the window is, and the session's cost. Claude Code's own labels (`focus`, `memory paused`) stand before it. |
+| Git | Before the usage: the branch HEAD is on (`detached@<commit>` on none) after a Nerd Font icon, and the lines added and deleted in the tracked files since the last commit, staged or not (`git diff --numstat HEAD`), a count of zero left out. Read every five seconds and after each tool call, with opencode.vim's commands; nothing outside a repository. The `git` option turns it off. |
 
 Segments drop out as the terminal narrows: the provider first, then `Claude`, the effort and the model.
+In the last row the usage goes first, then the git counts, then the branch is cut short.
 
 ## Layout
 
