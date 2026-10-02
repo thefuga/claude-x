@@ -343,6 +343,35 @@ describe('status line', () => {
     expect(await gutter()).toEqual([])
   })
 
+  test('keeps the box as tall as it is asked to, with rows of its own under the draft', { options: { minLines: 5 } }, async ($, on) => {
+    const clock = mock.clock(on)
+    const held = world(on)
+    await $.session.start(START)
+    await clock.settle()
+    const left = await $.ui.mount({ ...BLOCK, props: { ...CYCLING, isDraft: true } })
+    const tops = async (text: string) =>
+      (await left.findAll({ type: 'Box' })).filter(box => box.props.position === 'absolute' && box.text.includes(text)).map(box => box.props.top)
+    const rule = '─'.repeat(120)
+
+    // Until the mode is read the engine's own mark stands in the footer's first row: nothing is added.
+    expect(await tops(rule)).toEqual([])
+    expect(await tops('INSERT')).toEqual([0])
+
+    await left.resize({ columns: STRIP.auto, rows: 0 })
+
+    expect(await tops(rule), 'the rule, on the last of the four rows added').toEqual([3])
+    expect(await tops('INSERT')).toEqual([4])
+    expect(await tops('auto mode on')).toEqual([5])
+    expect(await tops(' '.repeat(120)), "the box's own rule, and the rows over the engine's mark").toEqual([-1, 0, 1, 2])
+    expect(await tops('1 '), 'the numbers stay with the draft').toContain(-2)
+
+    held.box = { text: 'one\ntwo\nthree\nfour\nfive', cursor: 0 }
+    await clock.advance(100)
+
+    expect(await tops(rule), 'a draft that fills the box').toEqual([])
+    expect(await tops('INSERT')).toEqual([0])
+  })
+
   test('numbers nothing with the option off', { options: { lineNumbers: false } }, async ($, on) => {
     const clock = mock.clock(on)
     world(on)

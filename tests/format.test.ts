@@ -21,6 +21,7 @@ import {
   isBelieved,
   isInserting,
   locate,
+  minRowsOf,
   modelName,
   permissionOf,
   pickTitle,
@@ -59,6 +60,7 @@ const BLOCK = {
   usage: USAGE,
   isFilled: true,
   isNumbered: true,
+  minRows: 1,
   isRelabelled: true,
   isBelieved: true,
 }
@@ -386,6 +388,22 @@ describe('format', () => {
     expect(fitBlock({ ...BLOCK, draft: draftOf('x'.repeat(9000), 0, false) }).numbers, 'a draft too long to lay out').toBe(null)
     expect(counted(1), 'the engine has room for fewer rows than were laid out').toBe(null)
     expect(counted(5), 'room taken by what else stands under the prompt').toHaveLength(2)
+  })
+
+  // At 40 rows of screen the box shows fifteen rows at most; at 16, three.
+  test('pads a box that is to stand taller than its draft', () => {
+    const tall = draftOf(Array.from({ length: 6 }, (_, index) => `line ${index + 1}`).join('\n'), 0, false)
+    const padded = { ...BLOCK, minRows: 5 }
+
+    expect(fitBlock(BLOCK).pad, 'nothing asked for').toBe(0)
+    expect(fitBlock(padded).pad, 'two rows of draft').toBe(3)
+    expect(fitBlock({ ...padded, draft: ORIGIN }).pad).toBe(4)
+    expect(fitBlock({ ...padded, draft: tall }).pad, 'a draft past the least').toBe(0)
+    expect(fitBlock({ ...padded, height: 16 }).pad, 'no taller than the box may grow').toBe(1)
+    expect(fitBlock({ ...padded, reading: null }).pad, "the engine's mark would stand in the rows added").toBe(0)
+    expect(fitBlock({ ...padded, box: { ...PLACED, under: 1 } }).pad, "another plugin's row under the box").toBe(0)
+    expect(fitBlock({ ...padded, draft: draftOf('ok 🙂', 0, false) }).pad, 'rows that cannot be counted').toBe(0)
+    expect([5, 5.8, 0, -3, '5', undefined].map(minRowsOf)).toEqual([5, 5, 1, 1, 1, 1])
   })
 
   test('fits the tab row: the tab at one end, the usage at the other', () => {

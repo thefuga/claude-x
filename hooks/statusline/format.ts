@@ -41,6 +41,9 @@ export type Block = {
   // top: null on a row that carries a line on, and null in all where the gutter is left as the
   // engine draws it.
   numbers: readonly (LineNumber | null)[] | null
+  // The rows drawn under a box shorter than it is to stand, so that it reads as that tall: its own
+  // rule blanked, blank rows of the footer's under it, and a rule on the last of them.
+  pad: number
   under: number
   isFilled: boolean
   isMeasured: boolean
@@ -439,6 +442,8 @@ type Drawn = Facts & {
   usage: Usage
   isFilled: boolean
   isNumbered: boolean
+  // The rows the box is to stand at the least; 1 leaves it as the engine sizes it.
+  minRows: number
   isRelabelled: boolean
   isBelieved: boolean
 }
@@ -493,10 +498,16 @@ export const windowStart = (row: number, laid: number, cap: number) => clamp(row
 // goes by the room the band above the prompt is left, and whatever else stands under the prompt (its
 // list of agents, a notice) takes from that room too. So that count only tells when the draft cannot
 // stand in as many rows as were laid out, and then nothing is numbered.
-const lineNumbers = (laid: readonly Row[] | null, cap: number, { draft, box, isNumbered }: Drawn) => {
-  const isShort = !box.isAligned && box.rows !== null && laid !== null && box.rows < Math.min(cap, laid.length)
+const shownRows = (laid: readonly Row[] | null, cap: number, { box }: Drawn) => {
+  const shown = laid === null ? null : Math.min(cap, laid.length)
 
-  if (!isNumbered || laid === null || isShort) {
+  return shown === null || (!box.isAligned && box.rows !== null && box.rows < shown) ? null : shown
+}
+
+const lineNumbers = (laid: readonly Row[] | null, cap: number, facts: Drawn) => {
+  const { draft, isNumbered } = facts
+
+  if (!isNumbered || laid === null || shownRows(laid, cap, facts) === null) {
     return null
   }
 
@@ -506,6 +517,15 @@ const lineNumbers = (laid: readonly Row[] | null, cap: number, { draft, box, isN
     .map((row, index) => (laid[index - 1]?.line === row.line ? null : { label: gutterLabel(row.line), isCurrent: row.line === draft.line }))
     .slice(from, from + cap)
 }
+
+// The `minLines` option as a count of rows: a whole number from 1, which asks for nothing.
+export const minRowsOf = (value: unknown) => (typeof value === 'number' && value >= 1 ? Math.floor(value) : 1)
+
+// The rows to add under a box that shows fewer than it is to stand. They are the footer's own, so
+// the engine's mark would stand in the first of them: none where the bar does not name the mode in
+// the mark's place, and none where another plugin's row is pinned between the box and the footer.
+const padRows = (shown: number | null, cap: number, slot: number, { box, minRows }: Drawn) =>
+  shown === null || slot !== 0 || box.under > 0 ? 0 : Math.max(0, Math.min(minRows, cap) - shown)
 
 export const fitBlock = (facts: Drawn): Block => {
   const { columns, height, draft, box, isFilled, isRelabelled } = facts
@@ -536,6 +556,7 @@ export const fitBlock = (facts: Drawn): Block => {
     gap: Math.max(2, columns - (slot === 0 ? 0 : GUTTER + slot) - columnsOf(bar) - cursor.length - 2),
     rows: box.isPlaced ? blockRows(count, laid, room, facts) : null,
     numbers: lineNumbers(laid, cap, facts),
+    pad: padRows(shownRows(laid, cap, facts), cap, slot, facts),
     under: box.under,
     isFilled,
     isMeasured: isRelabelled,

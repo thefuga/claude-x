@@ -30,6 +30,7 @@ import {
   fitRight,
   isBelieved,
   isInserting,
+  minRowsOf,
   pickTitle,
   readingOf,
   sharesMark,
@@ -475,6 +476,8 @@ const boot = async ($: EngineInterface) => {
 }
 
 export const register: Register = (on, options) => {
+  const minRows = minRowsOf(options.minLines)
+
   // Only the fullscreen terminal lets a site draw outside itself, and only there is the box laid out
   // as the overlay expects.
   const overlays = (surface: RenderSurface, viewport: RenderViewport | undefined) =>
@@ -659,6 +662,7 @@ export const register: Register = (on, options) => {
       usage: spent,
       isFilled: false,
       isNumbered: options.lineNumbers !== false && plain,
+      minRows: plain ? minRows : 1,
       isRelabelled: true,
       isBelieved: believed,
     })

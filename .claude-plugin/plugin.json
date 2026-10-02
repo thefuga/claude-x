@@ -12,6 +12,14 @@
       "title": "Number the draft's lines",
       "description": "In the fullscreen renderer, draw each line's number over the two-cell gutter of the prompt box, in place of the prompt's own mark. Off leaves the gutter as Claude Code draws it.",
       "default": true
+    },
+    "minLines": {
+      "type": "number",
+      "title": "Rows the prompt stands at the least",
+      "description": "In the fullscreen renderer, keep the prompt box this many rows tall while its draft is shorter: blank rows are drawn under the draft and the box's rule under them. 1 leaves the box as Claude Code sizes it.",
+      "default": 1,
+      "min": 1,
+      "max": 20
     }
   }
 }

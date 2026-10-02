@@ -111,22 +111,41 @@ export const StatusTabs = (table: Table, { columns, title, note }: TabRow) => {
 // own mark keeps a slot at the head of the bar, and the row under it has the usage alone. The line
 // numbers go over the gutter of the prompt box, whose last row stands two rows above the footer's
 // first: the box's rule is between them, and under the rule the rows other plugins pinned.
-export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, mark, label, usage, numbers, under, isMeasured }: Block) => {
+//
+// A box that is to stand taller than its draft gets `pad` rows more: its own rule is blanked, the
+// tree takes that many rows ahead of the bar, all but the last blanked too (the engine's mark is
+// in the first, and wraps onto the second), and the last one is drawn as the rule.
+export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, mark, label, usage, numbers, pad, under, isMeasured }: Block) => {
   const { Box, Text, Client } = table
   const at: Place = (top, column, width) => ({ position: 'absolute', top, right: columns - EDGE - column - width, width })
   const start = slot === 0 ? 0 : GUTTER + slot
   const lead = mark === '' ? '' : ` ${mark}`
 
   return (
-    <Box flexDirection="column" height={2}>
+    <Box flexDirection="column" height={pad + 2}>
       <Box height={0}>{isMeasured && <Client key="measure" module="./measure.tsx" props={{ of: columns }} flexGrow={1} height={0} />}</Box>
       <Box width={columns - 2 * EDGE + tuning} height={1} flexShrink={0} />
-      <Box {...at(0, start, columns - start)}>
+      {pad > 0 && (
+        <Box {...at(-1, 0, columns)}>
+          <Text>{cells(columns)}</Text>
+        </Box>
+      )}
+      {Array.from({ length: Math.max(0, pad - 1) }, (_, row) => (
+        <Box {...at(row, 0, columns)}>
+          <Text>{cells(columns)}</Text>
+        </Box>
+      ))}
+      {pad > 0 && (
+        <Box {...at(pad - 1, 0, columns)}>
+          <Text color="promptBorder">{'─'.repeat(columns)}</Text>
+        </Box>
+      )}
+      <Box {...at(pad, start, columns - start)}>
         {segments(table, bar, {})}
         <Text>{cells(gap)}</Text>
         <Text dimColor>{`${bar.cursor}  `}</Text>
       </Box>
-      <Box {...at(1, 0, columns)}>
+      <Box {...at(pad + 1, 0, columns)}>
         <Text color={permissionColor(label)} dimColor={label === 'Manual'}>
           {lead}
         </Text>
