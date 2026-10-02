@@ -143,6 +143,9 @@ let seenSuggestion: string | null | undefined
 let seenEffort: string | null | undefined
 let seenReading: string | undefined
 let seenBelieved: boolean | undefined
+// The session the mod last started for, and the timer that reads the git state.
+let session: string | undefined
+let gitTimer: Timer | undefined
 
 // Nothing here is worth failing a hook over: what cannot be read stays as it was drawn.
 const quietly = async ($: EngineInterface, label: string, work: Promise<unknown>) => {
@@ -879,10 +882,33 @@ const boot = async ($: EngineInterface) => {
 
   // Files change between tool calls too, from an editor or a terminal of the person's own.
   if (hasGit) {
-    $.clock.every(GIT_MS, () => {
+    gitTimer ??= $.clock.every(GIT_MS, () => {
       void quietly($, 'git', syncGit($))
     })
   }
+}
+
+// Another session opened in the same process (`/resume`, `/clear`): the mod stays loaded, but the
+// values it draws from are the new session's, all unset. What it last wrote is forgotten, so that
+// everything is written again rather than taken for already there.
+const switchSession = async ($: EngineInterface, id: string) => {
+  const isSwitch = session !== undefined && session !== id
+  session = id
+
+  if (!isSwitch) {
+    return
+  }
+
+  seenGit = undefined
+  seenPrompt = undefined
+  seenBox = undefined
+  seenPlain = undefined
+  seenSuggestion = undefined
+  seenEffort = undefined
+  seenReading = undefined
+  seenBelieved = undefined
+  placedFor = undefined
+  await boot($)
 }
 
 export const register: Register = (on, options) => {
@@ -906,6 +932,7 @@ export const register: Register = (on, options) => {
   })
 
   on('classic.SessionStart', ($, e, next) => {
+    void quietly($, 'session', switchSession($, e.session_id))
     void quietly($, 'session', adoptSession($, e.transcript_path, e.session_title))
     void quietly($, 'model', syncModel($))
     void quietly($, 'usage', syncUsage($))
