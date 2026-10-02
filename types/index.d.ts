@@ -24,6 +24,7 @@ declare module 'claude-code' {
       input: Draft
       editor: string
       box: Box
+      isBoxPlain: boolean
       pins: string[]
       suggestion: string | null
       reading: Reading | null

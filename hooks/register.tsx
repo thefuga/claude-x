@@ -54,6 +54,7 @@ const VERDICTS = 'label-verdicts'
 
 const input = atom({ plugin: 'open-claude', key: 'input' } as const, ORIGIN)
 const box = atom({ plugin: 'open-claude', key: 'box' } as const, UNPLACED)
+const isBoxPlain = atom({ plugin: 'open-claude', key: 'isBoxPlain' } as const, true)
 const pins = atom({ plugin: 'open-claude', key: 'pins' } as const, [])
 const suggestion = atom({ plugin: 'open-claude', key: 'suggestion' } as const, null)
 const editor = atom({ plugin: 'open-claude', key: 'editor' } as const, 'INSERT')
@@ -85,6 +86,10 @@ let marked: string | null = null
 let engine: string | undefined
 let seenPrompt: string | undefined
 let seenBox: string | undefined
+// What keeps the draft's lines from being numbered, each learned on its own.
+let isGutterTaken = false
+let hasStatusLine = false
+let seenPlain: boolean | undefined
 let seenSuggestion: string | null | undefined
 let seenEffort: string | null | undefined
 let seenReading: string | undefined
@@ -225,6 +230,34 @@ const noteBand = ($: EngineInterface, maxRows: number, height: number) => {
   $.clock.after(0, () => {
     void quietly($, 'rows', verify($, false))
   })
+}
+
+// The numbers go by a box that stands as the engine draws it for the main conversation: two cells
+// of gutter beside the draft, and between the box and the footer only the rows other plugins pin.
+const publishPlain = ($: EngineInterface) => {
+  const isPlain = !isGutterTaken && !hasStatusLine
+
+  if (isPlain === seenPlain) {
+    return
+  }
+
+  seenPlain = isPlain
+  $.clock.after(0, () => {
+    void quietly($, 'box', update($, isBoxPlain, () => isPlain))
+  })
+}
+
+// An agent's transcript in view puts the agent's name in the gutter, and a pane docked beside the
+// transcript leaves the prompt narrower than it is laid out here.
+const noteGutter = ($: EngineInterface, isTaken: boolean) => {
+  isGutterTaken = isTaken
+  publishPlain($)
+}
+
+// A status line command draws what it prints between the box and the footer, however many rows.
+const syncStatusLine = async ($: EngineInterface) => {
+  hasStatusLine = (await $.settings.read()).statusLine !== undefined
+  publishPlain($)
 }
 
 // Another plugin pinned a status line, or took one down: a row under the prompt's rule either way.
@@ -433,6 +466,7 @@ const boot = async ($: EngineInterface) => {
     quietly($, 'label', syncBelieved($)),
     quietly($, 'model', syncModel($)),
     quietly($, 'editor', syncVim($)),
+    quietly($, 'status line', syncStatusLine($)),
     quietly($, 'effort', seedEffort($)),
     quietly($, 'usage', syncUsage($)),
     quietly($, 'cursor', syncBox($)),
@@ -514,6 +548,18 @@ export const register: Register = (on, options) => {
     return set
   })
 
+  // A settings file changed under the session. The hooks are asked before the engine takes the
+  // change up, so what it may have changed is read a moment after they have answered.
+  on('classic.ConfigChange', async ($, e, next) => {
+    const answered = await next(e)
+    $.clock.after(SETTLE_MS, () => {
+      void quietly($, 'editor', syncVim($))
+      void quietly($, 'status line', syncStatusLine($))
+    })
+
+    return answered
+  })
+
   on('command.run', { command: 'rename' }, async ($, e, next) => {
     const ran = await next(e)
     const given = e.args.trim()
@@ -566,6 +612,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, ($, e, next) => {
     if (e.viewport !== undefined) {
       noteBand($, e.props.maxRows, e.viewport.rows)
+      noteGutter($, e.props.view.agentId !== undefined || e.props.bodyColumns !== e.viewport.columns)
     }
 
     return next(e)
@@ -595,10 +642,11 @@ export const register: Register = (on, options) => {
       return StatusRow($.ui.resolve(e), fitLeft({ columns: width, mode: label, model: id, effort: level, title: null }))
     }
 
-    const [stands, measured, believed] = await Promise.all([read($, box), read($, reading), read($, isLabelBelieved)])
+    const [stands, measured, believed, plain] = await Promise.all([read($, box), read($, reading), read($, isLabelBelieved), read($, isBoxPlain)])
     const block = fitBlock({
       columns: width,
-      height: e.viewport?.rows ?? TALL,
+      // The band is drawn again when the screen's height changes, which this row is not.
+      height: band?.height ?? e.viewport?.rows ?? TALL,
       hint: e.props.hint,
       draft: at,
       mode: label,
@@ -610,6 +658,7 @@ export const register: Register = (on, options) => {
       title: null,
       usage: spent,
       isFilled: false,
+      isNumbered: options.lineNumbers !== false && plain,
       isRelabelled: true,
       isBelieved: believed,
     })

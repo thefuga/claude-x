@@ -6,6 +6,7 @@ import {
   ORIGIN,
   PERMISSIONS,
   PLACEHOLDER,
+  UNPLACED,
   announcedEfforts,
   boxRowsOf,
   draftOf,
@@ -16,6 +17,7 @@ import {
   fitRight,
   fitTabRow,
   formatTokens,
+  gutterLabel,
   isBelieved,
   isInserting,
   locate,
@@ -32,6 +34,7 @@ import {
   truncate,
   tuningOf,
   verdictsOf,
+  windowStart,
 } from '../hooks/statusline/format'
 
 const USAGE = { tokens: 19_700, percent: 2, usd: 0.13 }
@@ -55,6 +58,7 @@ const BLOCK = {
   title: 'Update Claude Code mods',
   usage: USAGE,
   isFilled: true,
+  isNumbered: true,
   isRelabelled: true,
   isBelieved: true,
 }
@@ -339,6 +343,49 @@ describe('format', () => {
 
     expect(unplaced.rows).toBe(null)
     expect(unplaced.bar).toMatchObject({ mode: 'INSERT', cursor: 'Ln 2, Col 12 · 100%' })
+  })
+
+  test("numbers each row of the box that starts a line, the cursor's line apart", () => {
+    // At 64 columns a row of the box takes 60 cells: the first line here takes two rows.
+    const wrapped = draftOf(`${'word '.repeat(13)}\nnext`, 0, false)
+
+    expect(fitBlock(BLOCK).numbers).toEqual([
+      { label: '1 ', isCurrent: false },
+      { label: '2 ', isCurrent: true },
+    ])
+    expect(fitBlock({ ...BLOCK, columns: 64, draft: wrapped }).numbers).toEqual([
+      { label: '1 ', isCurrent: true },
+      null,
+      { label: '2 ', isCurrent: false },
+    ])
+    expect(fitBlock({ ...BLOCK, draft: ORIGIN }).numbers, 'the empty box has its one line').toEqual([{ label: '1 ', isCurrent: true }])
+    expect(fitBlock({ ...BLOCK, box: UNPLACED }).numbers, 'before the rows were ever checked').toHaveLength(2)
+  })
+
+  test('fits a number to the two cells of the gutter', () => {
+    expect([1, 9, 10, 99, 100, 105, 1234].map(gutterLabel)).toEqual(['1 ', '9 ', '10', '99', '00', '05', '34'])
+  })
+
+  // At 30 rows of screen the box shows ten rows of a draft and keeps the cursor's in the middle.
+  test('numbers the rows a box too short for its draft shows', () => {
+    const lines = Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join('\n')
+    const labels = (offset: number) =>
+      fitBlock({ ...BLOCK, height: 30, draft: draftOf(lines, offset, false) }).numbers?.map(number => number?.label)
+
+    expect(labels(0)).toEqual(['1 ', '2 ', '3 ', '4 ', '5 ', '6 ', '7 ', '8 ', '9 ', '10'])
+    expect(labels(lines.indexOf('line 10'))).toEqual(['5 ', '6 ', '7 ', '8 ', '9 ', '10', '11', '12', '13', '14'])
+    expect(labels(lines.length)).toEqual(['11', '12', '13', '14', '15', '16', '17', '18', '19', '20'])
+    expect([windowStart(0, 20, 10), windowStart(9, 20, 10), windowStart(19, 20, 10), windowStart(3, 8, 10)]).toEqual([0, 4, 10, 0])
+  })
+
+  test('numbers nothing it is not sure of', () => {
+    const counted = (rows: number) => fitBlock({ ...BLOCK, box: { ...PLACED, rows, isAligned: false } }).numbers
+
+    expect(fitBlock({ ...BLOCK, isNumbered: false }).numbers, 'the option off, or a box that does not stand plain').toBe(null)
+    expect(fitBlock({ ...BLOCK, draft: draftOf('ok 🙂\nyes', 0, false) }).numbers, 'an emoji').toBe(null)
+    expect(fitBlock({ ...BLOCK, draft: draftOf('x'.repeat(9000), 0, false) }).numbers, 'a draft too long to lay out').toBe(null)
+    expect(counted(1), 'the engine has room for fewer rows than were laid out').toBe(null)
+    expect(counted(5), 'room taken by what else stands under the prompt').toHaveLength(2)
   })
 
   test('fits the tab row: the tab at one end, the usage at the other', () => {

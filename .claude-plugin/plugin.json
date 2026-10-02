@@ -5,5 +5,13 @@
   "author": {
     "name": "Erick Fuga"
   },
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "lineNumbers": {
+      "type": "boolean",
+      "title": "Number the draft's lines",
+      "description": "In the fullscreen renderer, draw each line's number over the two-cell gutter of the prompt box, in place of the prompt's own mark. Off leaves the gutter as Claude Code draws it.",
+      "default": true
+    }
+  }
 }

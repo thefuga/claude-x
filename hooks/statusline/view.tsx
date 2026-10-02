@@ -108,8 +108,10 @@ export const StatusTabs = (table: Table, { columns, title, note }: TabRow) => {
 // left edge: the tree asks for more than the row, which pins its right edge two cells short of the
 // screen's, and every piece is placed from there. The bar goes over the engine's mark, and a copy
 // of the mark on the row under it with the usage; where the mode is not known for sure the engine's
-// own mark keeps a slot at the head of the bar, and the row under it has the usage alone.
-export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, mark, label, usage, isMeasured }: Block) => {
+// own mark keeps a slot at the head of the bar, and the row under it has the usage alone. The line
+// numbers go over the gutter of the prompt box, whose last row stands two rows above the footer's
+// first: the box's rule is between them, and under the rule the rows other plugins pinned.
+export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, mark, label, usage, numbers, under, isMeasured }: Block) => {
   const { Box, Text, Client } = table
   const at: Place = (top, column, width) => ({ position: 'absolute', top, right: columns - EDGE - column - width, width })
   const start = slot === 0 ? 0 : GUTTER + slot
@@ -131,6 +133,14 @@ export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, 
         <Text>{cells(columns - lead.length - usage.length - 2)}</Text>
         <Text dimColor>{`${usage}  `}</Text>
       </Box>
+      {numbers?.map(
+        (number, index) =>
+          number !== null && (
+            <Box {...at(index - numbers.length - 1 - under, 0, GUTTER)}>
+              <Text dimColor={!number.isCurrent}>{number.label}</Text>
+            </Box>
+          ),
+      )}
     </Box>
   )
 }

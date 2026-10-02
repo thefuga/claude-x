@@ -15,6 +15,9 @@ export type Right = { cursor: string; usage: string }
 // character typed next. A row with no `fillFrom` gets its gutter and nothing else.
 export type BlockRow = { text: string | null; isDim: boolean; fillFrom: number | null; gap: number | null }
 
+// A number drawn over the box's gutter: the line's, and whether the cursor is on that line.
+export type LineNumber = { label: string; isCurrent: boolean }
+
 // What the left-hand site draws in the fullscreen terminal: the status bar on the footer's first row,
 // and over the prompt box above it the draft's rows and a row of fill on each of its rules. `rows` is
 // null where the box is left as the engine draws it; `under` is the rows other plugins pinned between
@@ -34,6 +37,10 @@ export type Block = {
   // The blank cells between the bar's two halves, drawn so that they cover the engine's mark.
   gap: number
   rows: readonly BlockRow[] | null
+  // The line numbers drawn over the box's gutter, one entry for each row the box shows, from the
+  // top: null on a row that carries a line on, and null in all where the gutter is left as the
+  // engine draws it.
+  numbers: readonly (LineNumber | null)[] | null
   under: number
   isFilled: boolean
   isMeasured: boolean
@@ -431,6 +438,7 @@ type Drawn = Facts & {
   title: string | null
   usage: Usage
   isFilled: boolean
+  isNumbered: boolean
   isRelabelled: boolean
   isBelieved: boolean
 }
@@ -473,6 +481,32 @@ const blockRows = (count: number, laid: readonly Row[] | null, room: number, fac
   })
 }
 
+// The gutter is two cells: a number under 10 keeps one clear of the text, one under 100 fills both,
+// and past that only its last two digits fit.
+export const gutterLabel = (line: number) => (line < 10 ? `${line} ` : String(line % 100).padStart(2, '0'))
+
+// A box too short for its draft shows a window of its rows, and the engine keeps the cursor's row in
+// the middle of it.
+export const windowStart = (row: number, laid: number, cap: number) => clamp(row - Math.floor(cap / 2), 0, Math.max(0, laid - cap))
+
+// The number of each row the box shows. The rows are the ones laid out here: the engine's own count
+// goes by the room the band above the prompt is left, and whatever else stands under the prompt (its
+// list of agents, a notice) takes from that room too. So that count only tells when the draft cannot
+// stand in as many rows as were laid out, and then nothing is numbered.
+const lineNumbers = (laid: readonly Row[] | null, cap: number, { draft, box, isNumbered }: Drawn) => {
+  const isShort = !box.isAligned && box.rows !== null && laid !== null && box.rows < Math.min(cap, laid.length)
+
+  if (!isNumbered || laid === null || isShort) {
+    return null
+  }
+
+  const from = windowStart(cursorIn(laid, draft.offset).row, laid.length, cap)
+
+  return laid
+    .map((row, index) => (laid[index - 1]?.line === row.line ? null : { label: gutterLabel(row.line), isCurrent: row.line === draft.line }))
+    .slice(from, from + cap)
+}
+
 export const fitBlock = (facts: Drawn): Block => {
   const { columns, height, draft, box, isFilled, isRelabelled } = facts
   const found = isRelabelled ? permissionOf(columns, facts.reading) : null
@@ -501,6 +535,7 @@ export const fitBlock = (facts: Drawn): Block => {
     usage: usageText(facts.usage, sizeOf(columns)),
     gap: Math.max(2, columns - (slot === 0 ? 0 : GUTTER + slot) - columnsOf(bar) - cursor.length - 2),
     rows: box.isPlaced ? blockRows(count, laid, room, facts) : null,
+    numbers: lineNumbers(laid, cap, facts),
     under: box.under,
     isFilled,
     isMeasured: isRelabelled,

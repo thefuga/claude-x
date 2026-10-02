@@ -84,6 +84,7 @@ type World = {
   box: { text: string; cursor: number }
   announced: string
   rows: ConfigRow[]
+  settings: Record<string, unknown>
   reads: number
   version: string
   kept: Record<string, unknown>
@@ -92,7 +93,7 @@ type World = {
 // What the engine answers beneath the mod: a session on Opus with one title in its transcript, on a
 // version of Claude Code the permission label was checked on.
 const world = (on: On): World => {
-  const held: World = { box: { text: '', cursor: 0 }, announced: '', rows: [], reads: 0, version: '2.1.287', kept: {} }
+  const held: World = { box: { text: '', cursor: 0 }, announced: '', rows: [], settings: {}, reads: 0, version: '2.1.287', kept: {} }
 
   mock.env(on, { HOME: '/home/me' })
   on('store.get', ($, e) => ({ value: held.kept[e.key] }))
@@ -103,6 +104,7 @@ const world = (on: On): World => {
   })
   on('session.version', () => ({ value: { version: held.version } }))
   on('classic.UserPromptSubmit', () => ({}))
+  on('classic.ConfigChange', () => ({}))
   on('ui.message', () => ({}))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.model', () => ({ value: 'claude-opus-5-5[1m]' }))
@@ -111,7 +113,7 @@ const world = (on: On): World => {
   on('session.id', () => ({ value: 'abc' }))
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('config.list', () => ({ value: held.rows }))
-  on('settings.read', () => ({ value: {} }))
+  on('settings.read', () => ({ value: held.settings }))
   on('fs.exists', () => ({ value: true }))
   on('command.run', () => ({}))
   on('classic.Stop', () => ({}))
@@ -299,6 +301,81 @@ describe('status line', () => {
     await left.redraw({ ...IDLE, hint: 'Press Ctrl-C again to exit' })
 
     expect((await left.find({ type: 'Text' }))?.text).toBe('Press Ctrl-C again to exit')
+  })
+
+  test("numbers the draft's lines over the gutter of the prompt box", async ($, on) => {
+    const clock = mock.clock(on)
+    const held = world(on)
+    await $.session.start(START)
+    await clock.settle()
+    const left = await $.ui.mount({ ...BLOCK, props: { ...CYCLING, isDraft: true } })
+    // The numbers are the only boxes two cells wide: the gutter's, placed from the screen's right edge.
+    const gutter = async () => (await left.findAll({ type: 'Box' })).map(box => box.props).filter(props => props.width === 2)
+    const number = async (label: string) => (await left.findAll({ type: 'Text' })).find(text => text.text === label)
+
+    expect(await gutter(), 'the empty box: one row, two rows over the footer').toMatchObject([{ top: -2, right: 116 }])
+
+    held.box = { text: 'fix the\nstatus line', cursor: 10 }
+    await clock.advance(100)
+
+    expect(await gutter()).toMatchObject([
+      { top: -3, right: 116 },
+      { top: -2, right: 116 },
+    ])
+    expect((await number('1 '))?.props).toMatchObject({ dimColor: true })
+    expect((await number('2 '))?.props, "the cursor's line").toMatchObject({ dimColor: false })
+
+    // An agent's transcript in view: its name stands in the gutter.
+    const above = await $.ui.mount({ ...BAND, props: { ...band(13), view: { agentId: 'a1' } } })
+    await clock.advance(0)
+
+    expect(await gutter()).toEqual([])
+
+    await above.redraw(band(13))
+    await clock.advance(0)
+
+    expect(await gutter()).toHaveLength(2)
+
+    // A pane docked beside the transcript: the prompt is narrower than the screen.
+    await above.redraw({ ...band(13), bodyColumns: 80 })
+    await clock.advance(0)
+
+    expect(await gutter()).toEqual([])
+  })
+
+  test('numbers nothing with the option off', { options: { lineNumbers: false } }, async ($, on) => {
+    const clock = mock.clock(on)
+    world(on)
+    await $.session.start(START)
+    await clock.settle()
+    const left = await $.ui.mount({ ...BLOCK, props: CYCLING })
+
+    expect((await left.findAll({ type: 'Box' })).filter(box => box.props.width === 2)).toEqual([])
+    expect(await left.find({ type: 'Text', text: 'INSERT' })).toBeDefined()
+  })
+
+  test('takes up what a change to the settings brings: the vim editor, a status line under the box', async ($, on) => {
+    const clock = mock.clock(on)
+    const held = world(on)
+    await $.session.start(START)
+    await clock.settle()
+    const left = await $.ui.mount({ ...BLOCK, props: { ...IDLE, hint: '' } })
+    const gutter = async () => (await left.findAll({ type: 'Box' })).filter(box => box.props.width === 2)
+
+    expect(await left.find({ type: 'Text', text: 'INSERT' })).toBeDefined()
+    expect(await gutter()).toHaveLength(1)
+
+    // The engine asks its hooks before it takes the change up.
+    held.rows = [VIM]
+    held.settings = { statusLine: { type: 'command', command: 'date' } }
+    await $.classic.ConfigChange({ source: 'user_settings' })
+
+    expect(await left.find({ type: 'Text', text: 'INSERT' })).toBeDefined()
+
+    await clock.advance(150)
+
+    expect(await left.find({ type: 'Text', text: 'NORMAL' })).toBeDefined()
+    expect(await gutter(), 'a status line draws its rows between the box and the footer').toEqual([])
   })
 
   test('reads the cursor while the box holds a draft, and stops once it is empty', async ($, on) => {

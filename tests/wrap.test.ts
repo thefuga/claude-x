@@ -16,14 +16,14 @@ describe('wrap', () => {
 
   test('does not show the space a full row pushed to the next one', () => {
     expect(layOut(`${a(90)} ${b(5)} ccc`, 96)).toEqual([
-      { text: `${a(90)} ${b(5)}`, start: 0, hidden: 0 },
-      { text: 'ccc', start: 96, hidden: 1 },
+      { text: `${a(90)} ${b(5)}`, start: 0, hidden: 0, line: 1 },
+      { text: 'ccc', start: 96, hidden: 1, line: 1 },
     ])
     expect(texts(`${a(96)} b`, 96)).toEqual([a(96), 'b'])
     expect(texts(`${a(95)}  b`, 96)).toEqual([`${a(95)} `, 'b'])
     expect(layOut(`${a(56)} `, 56)).toEqual([
-      { text: a(56), start: 0, hidden: 0 },
-      { text: '', start: 56, hidden: 1 },
+      { text: a(56), start: 0, hidden: 0, line: 1 },
+      { text: '', start: 56, hidden: 1, line: 1 },
     ])
   })
 
@@ -40,6 +40,11 @@ describe('wrap', () => {
     expect(cursorIn(rows, 100)).toEqual({ row: 1, column: 3 })
     expect(cursorIn(layOut(`${a(56)} `, 56) ?? [], 57)).toEqual({ row: 1, column: 0 })
     expect(cursorIn(layOut('one\n\ntwo', 20) ?? [], 4)).toEqual({ row: 1, column: 0 })
+  })
+
+  test('says which line each row shows', () => {
+    expect(layOut('one\n\ntwo three', 5)?.map(row => row.line)).toEqual([1, 2, 3, 3])
+    expect(layOut('', 40)).toEqual([{ text: '', start: 0, hidden: 0, line: 1 }])
   })
 
   test('lays out the letters and marks of Latin, Greek and Cyrillic text', () => {

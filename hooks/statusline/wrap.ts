@@ -2,9 +2,9 @@
 // never on it. The box wraps each line with Bun.wrapAnsi(line, width, { hard: true, trim: false })
 // and shows a row that continues a line without the spaces it would start with.
 
-// One row of the box: its text as shown, where the row starts in the draft, and how many spaces
-// ahead of the text are not shown.
-export type Row = { text: string; start: number; hidden: number }
+// One row of the box: its text as shown, where the row starts in the draft, how many spaces ahead
+// of the text are not shown, and the line it shows, counted from 1.
+export type Row = { text: string; start: number; hidden: number; line: number }
 
 // Characters that are one cell each and break nowhere but at a space: printable ASCII, the Latin,
 // Greek and Cyrillic letters, and the common dashes, quotes, arrows, operators and box drawing.
@@ -94,10 +94,10 @@ export const layOut = (text: string, width: number): Row[] | null => {
   const rows: Row[] = []
   let start = 0
 
-  for (const line of text.split('\n')) {
-    wrapLine(line, width).forEach((raw, index) => {
-      const shown = index === 0 ? raw : raw.trimStart()
-      rows.push({ text: shown, start, hidden: raw.length - shown.length })
+  for (const [index, line] of text.split('\n').entries()) {
+    wrapLine(line, width).forEach((raw, part) => {
+      const shown = part === 0 ? raw : raw.trimStart()
+      rows.push({ text: shown, start, hidden: raw.length - shown.length, line: index + 1 })
       start += raw.length
     })
     start += 1
