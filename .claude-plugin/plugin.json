@@ -20,6 +20,12 @@
       "default": 1,
       "min": 1,
       "max": 20
+    },
+    "syntax": {
+      "type": "boolean",
+      "title": "Color the draft's markdown",
+      "description": "Paint the draft as it is typed: headings, emphasis, code, links, lists and quotes, and the code inside a fence by the language it names. The colors drop when the draft changes without a typed key (a new line from a rebound Enter, an edit in vim's normal mode) and return at the next one. Off leaves the draft as Claude Code draws it.",
+      "default": true
     }
   }
 }

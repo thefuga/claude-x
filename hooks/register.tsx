@@ -41,6 +41,7 @@ import {
 import { theme } from './statusline/theme'
 import { StatusBlock, StatusNote, StatusRow } from './statusline/view'
 import { layOut } from './statusline/wrap'
+import { paint } from './syntax/paint'
 
 const POLL_MS = 100
 // The vim editor's normal mode changes the draft with no event at all, so there it is read each frame or two.
@@ -77,6 +78,8 @@ let prompt: PromptBox = { text: '', cursor: 0 }
 let edits = 0
 // The draft the engine was last handed decorations for; it drops them when the draft changes unasked.
 let decorated: string | undefined
+// Whether the box was in shell mode when its hint was last drawn: what is typed there is a command.
+let isShell = false
 let band: { maxRows: number; height: number } | undefined
 // The plugins with a status line pinned under the prompt: a row each, between its rule and the footer.
 let pinned = new Set<string>()
@@ -589,21 +592,22 @@ export const register: Register = (on, options) => {
     return shown
   })
 
-  // Every keystroke passes here with the draft it leaves. Where the draft's rows are filled, the
-  // engine is asked to paint the text on the same color, which it does in the frame it draws the text.
+  // Every keystroke passes here with the draft it leaves, and the engine paints the runs answered in
+  // the frame it draws the text: the fill's color where the draft's rows are filled, and the draft's
+  // markdown in its colors. It keeps them until the draft changes with no keystroke (a new line from
+  // a key bound to one, an edit in the vim editor's normal mode), and nothing here can paint again
+  // before the next one: the one call that paints a whole draft also moves the cursor to its end.
   on('prompt.edit', async ($, e, next) => {
     const edited = await next(e)
     edits += 1
     decorated = isFilling ? edited.text : undefined
     void quietly($, 'cursor', setPrompt($, { text: edited.text, cursor: edited.cursor }))
+    const runs = [
+      ...(isFilling ? [{ start: 0, end: WHOLE_DRAFT, backgroundColor: theme.bar }] : []),
+      ...(options.syntax === false ? [] : paint(edited.text, isShell)),
+    ]
 
-    if (!isFilling) {
-      return edited
-    }
-
-    const fill = { start: 0, end: WHOLE_DRAFT, backgroundColor: theme.bar }
-
-    return { ...edited, decorations: [...(edited.decorations ?? []), fill] }
+    return runs.length === 0 ? edited : { ...edited, decorations: [...(edited.decorations ?? []), ...runs] }
   })
 
   on('ui.status', ($, e, next) => {
@@ -636,6 +640,7 @@ export const register: Register = (on, options) => {
     const [vim, id, level, at, spent] = await Promise.all([read($, isVim), read($, model), read($, effort), read($, input), read($, usage)])
     const width = e.viewport?.columns ?? WIDE
     const label = editorMode(e.props.hint, vim)
+    isShell = label.startsWith('SHELL')
 
     if (e.props.isDraft) {
       watchBox($, vim && !isInserting(label) ? FAST_POLL_MS : POLL_MS)

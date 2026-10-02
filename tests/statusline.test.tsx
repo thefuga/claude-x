@@ -383,6 +383,37 @@ describe('status line', () => {
     expect(await left.find({ type: 'Text', text: 'INSERT' })).toBeDefined()
   })
 
+  test('colors the draft as it is typed: its markdown, or in shell mode the command it is', async ($, on) => {
+    const clock = mock.clock(on)
+    world(on)
+    await $.session.start(START)
+    await clock.settle()
+    const left = await $.ui.mount({ ...BLOCK, props: IDLE })
+
+    expect((await type($, '# fix')).decorations).toEqual([
+      { start: 0, end: 5, color: '#fabd2f', bold: true },
+      { start: 0, end: 1, color: '#8a8a8a', bold: false, italic: false, underline: false },
+    ])
+
+    // The hint leads with `! ` while the box is in shell mode, where a `#` starts a comment.
+    await left.redraw({ ...IDLE, hint: '! for bash mode' })
+
+    expect((await type($, '# fix')).decorations).toEqual([{ start: 0, end: 5, color: '#8a8a8a', italic: true }])
+
+    await left.redraw(IDLE)
+
+    expect((await type($, 'plain words')).decorations).toBeUndefined()
+  })
+
+  test('colors nothing with the option off', { options: { syntax: false } }, async ($, on) => {
+    const clock = mock.clock(on)
+    world(on)
+    await $.session.start(START)
+    await clock.settle()
+
+    expect((await type($, '# fix')).decorations).toBeUndefined()
+  })
+
   test('takes up what a change to the settings brings: the vim editor, a status line under the box', async ($, on) => {
     const clock = mock.clock(on)
     const held = world(on)
