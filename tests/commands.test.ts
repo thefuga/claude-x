@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { commandOf, draftKey, fieldKey, isField, keptDraft } from '../hooks/commandline/commands'
+import { NEXT, PREVIOUS, commandOf, completionsOf, draftKey, fieldKey, isField, keptDraft } from '../hooks/commandline/commands'
+
+const NATIVES = [
+  { name: 'compact', description: 'Free up context' },
+  { name: 'config', description: 'Open settings' },
+  { name: 'help', description: 'Show help' },
+  { name: 'Wiki', description: 'A skill' },
+]
+const names = (typed: string) => completionsOf(typed, NATIVES).map(({ name }) => name)
 
 describe('commands', () => {
   test('knows vim\'s names for saving, loading and quitting, each with its `!`', () => {
@@ -41,10 +49,27 @@ describe('commands', () => {
     expect(keptDraft({ text: 'old shape' })).toBe('')
   })
 
-  test('keys each field by how many were taken down before it', () => {
+  test('keys each field by how many were taken down before it, apart from the elements beside it', () => {
     expect(fieldKey(0)).toBe('command:0')
     expect(isField(fieldKey(7))).toBe(true)
+    expect(isField(NEXT)).toBe(false)
+    expect(isField(PREVIOUS)).toBe(false)
     expect(isField('measure')).toBe(false)
     expect(isField(undefined)).toBe(false)
+  })
+
+  test("completes a name from its start, the line's own commands ahead of Claude Code's", () => {
+    expect(names('co')).toEqual(['compact', 'config'])
+    expect(names('w')).toEqual(['w', 'write', 'wq', 'wq!', 'Wiki'])
+    expect(names(':Q')).toEqual(['q', 'quit', 'qa', 'qall', 'q!', 'quit!', 'qa!', 'qall!'])
+    expect(names(''), "the line's twenty names, and Claude Code's but the one they hide").toHaveLength(23)
+    expect(completionsOf('w', NATIVES)[0]).toEqual({ name: 'w', description: 'Save the draft for this session' })
+  })
+
+  test("lists no command of Claude Code's that one of the line's own names hides, and nothing past the name", () => {
+    expect(names('hel')).toEqual(['help'])
+    expect(completionsOf('hel', NATIVES)[0]?.description).toBe('List these commands')
+    expect(names('compact ')).toEqual([])
+    expect(names('model op')).toEqual([])
   })
 })

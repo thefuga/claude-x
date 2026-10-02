@@ -31,6 +31,8 @@ export const theme = {
   tab: { text: '#ebdbb2', background: '#3a3a3a' },
   // What the command line says when it will not do as asked.
   warning: '#fb4934',
+  // The completions over the command line: a gray of the ramp, and the picked one in normal mode's teal.
+  menu: { background: '#3a3a3a', text: '#ebdbb2', description: '#a89984', picked: '#7fa598', pickedText: '#282828' },
 }
 
 // A mark of the markup and a comment: a gray off the ramp, which the palette's own #928374 rounds away from.

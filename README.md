@@ -150,6 +150,12 @@ binding would take every `:` typed in insert mode as well.
 Enter runs the line and Escape leaves it; either way the keys go back to the prompt, in the mode it
 was in. What a command answers stands in the same row for a few seconds.
 
+Tab completes a command's name, as in opencode.vim. It opens a menu, just above the line, of the
+names that start with what is typed (the line's own first, then Claude Code's), and moves down it;
+Shift+Tab moves up, and so do Down and Up. Typing narrows the menu. Enter takes the picked name into
+the line, and the next Enter runs it. Only the name is completed, not what follows it. Escape
+leaves the line, menu and all.
+
 | Command | What it does |
 | --- | --- |
 | `:w` | Saves the draft. With an empty prompt, clears the saved one. |
@@ -170,13 +176,15 @@ The line is typed into a field nobody sees. A mod's field can take the keyboard 
 the band above the prompt, so the field stands there in a box of no height, and what is typed in
 it is drawn in the footer. That has its limits:
 
-- The cursor is always drawn at the end of the line. The arrow keys move the field's own cursor,
-  unseen.
+- The line is edited at its end. The field takes typing and Backspace; Left, Right, Home and End
+  do nothing in it.
 - After Escape the line stays for up to a fifth of a second. Claude Code raises nothing when the
   keys go back to the prompt, so the mod asks ten times a second whether the field still has them.
 - A draft is the prompt's text. A pasted image, or a paste long enough to be folded, comes back as
   its placeholder.
-- There is no Tab completion, and no command sends the prompt: a mod cannot press Enter.
+- The menu covers the rows above the line while it is up: the bar and the bottom of the prompt
+  box. It has as many rows as there are under the box's top rule, eight at the most.
+- No command sends the prompt: a mod cannot press Enter.
 
 ## Known issues
 

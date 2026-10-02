@@ -1,15 +1,23 @@
 import type { Elements } from 'claude-code'
 
 import { EDGE, GUTTER } from './format'
-import type { Bar, Block, Left, Line, Right, Segments, TabRow } from './format'
+import type { Menu } from '../../types'
+import type { Bar, Block, Left, Line, MenuBlock, Right, Segments, TabRow } from './format'
 import { badgeColor, permissionColor, theme } from './theme'
 
 type Table = Pick<Elements['terminal'], 'Box' | 'Text'>
 
-type Fields = Pick<Elements['terminal'], 'Box' | 'Input'>
+type Fields = Pick<Elements['terminal'], 'Box' | 'Button' | 'Input'>
 
-// What the command line's field is drawn with: its address, and what typing and Enter run.
-type Field = { key: string; onInput: (value: string) => void; onSubmit: (value: string) => void }
+// What the command line's field is drawn with: its address, the text it holds when drawn, what
+// typing and Enter run, and the two elements beside it, which the keys that move the ring land on.
+type Field = {
+  key: string
+  value: string
+  onInput: (value: string) => void
+  onSubmit: (value: string) => void
+  guards: { previous: string; next: string }
+}
 
 type Terminal = Pick<Elements['terminal'], 'Box' | 'Text' | 'Client'>
 
@@ -88,9 +96,10 @@ const said = ({ Text }: Table, { text, hasCursor, isWarning }: Line) => [
 ]
 
 // The bar alone, in one row after the engine's own permission mark. While the command line has
-// something to say, it says it after the mode's badge.
-export const StatusRow = (table: Table, row: Segments, line: Line | null) => {
-  const { Box } = table
+// something to say, it says it after the mode's badge, and the completion picked after that.
+export const StatusRow = (table: Table, row: Segments, line: Line | null, menu: Menu | null) => {
+  const { Box, Text } = table
+  const picked = menu?.items[menu.picked]
 
   if (line === null) {
     return <Box>{segments(table, row, {})}</Box>
@@ -100,16 +109,41 @@ export const StatusRow = (table: Table, row: Segments, line: Line | null) => {
     <Box>
       {segments(table, { mode: row.mode, permission: '', model: '', provider: '', effort: '' }, {})}
       {said(table, line)}
+      {picked !== undefined && <Text dimColor>{`  ${picked.name}`}</Text>}
     </Box>
   )
 }
 
+// The completions, in rows that end on the bar's, from the screen's edge, so that nothing of the
+// rows under them shows beside them, with the names under the name typed after the colon.
+const menuRows = ({ Box, Text }: Table, menu: MenuBlock, place: (top: number, column: number, width: number) => object, bottom: number) =>
+  menu.rows.map(({ name, description, isPicked }, index) => {
+    const background = isPicked ? theme.menu.picked : theme.menu.background
+
+    return (
+      <Box {...place(bottom - menu.rows.length + 1 + index, 0, menu.width)}>
+        <Text backgroundColor={background} color={isPicked ? theme.menu.pickedText : theme.menu.text} bold={isPicked}>
+          {`  ${name.padEnd(menu.nameWidth)}  `}
+        </Text>
+        <Text backgroundColor={background} color={isPicked ? theme.menu.pickedText : theme.menu.description}>
+          {description.padEnd(menu.width - menu.nameWidth - 4)}
+        </Text>
+      </Box>
+    )
+  })
+
 // The command line's field, which is typed into where nobody sees it: it stands in the band above
 // the prompt, the one place a mod's field can take the keyboard, in a box of no height, and what
 // is typed is drawn in the footer, where vim has its command line.
-export const CommandField = ({ Box, Input }: Fields, { key, onInput, onSubmit }: Field) => (
+export const CommandField = ({ Box, Button, Input }: Fields, { key, value, onInput, onSubmit, guards }: Field) => (
   <Box height={0} overflow="hidden">
-    <Input key={key} autoFocus onInput={onInput} onSubmit={onSubmit} />
+    <Button key={guards.previous} onPress={() => undefined}>
+      previous
+    </Button>
+    <Input key={key} value={value} autoFocus onInput={onInput} onSubmit={onSubmit} />
+    <Button key={guards.next} onPress={() => undefined}>
+      next
+    </Button>
   </Box>
 )
 
@@ -148,7 +182,7 @@ export const StatusTabs = (table: Table, { columns, title, note }: TabRow) => {
 //
 // The footer's last row is the command line's, as the screen's last row is in vim: while it is open
 // or has something to say, that stands where the copy of the mark does.
-export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, mark, label, line, usage, numbers, pad, under, isMeasured }: Block) => {
+export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, mark, label, line, menu, usage, numbers, pad, under, isMeasured }: Block) => {
   const { Box, Text, Client } = table
   const at: Place = (top, column, width) => ({ position: 'absolute', top, right: columns - EDGE - column - width, width })
   const start = slot === 0 ? 0 : GUTTER + slot
@@ -190,6 +224,7 @@ export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, 
         <Text>{cells(columns - taken - usage.length - 2)}</Text>
         <Text dimColor>{`${usage}  `}</Text>
       </Box>
+      {menu !== null && menuRows(table, menu, at, pad)}
       {numbers?.map(
         (number, index) =>
           number !== null && (

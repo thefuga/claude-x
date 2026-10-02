@@ -1,4 +1,4 @@
-import type { Box, Cursor, Draft, Echo, FieldState, Reading, Usage } from '../../types'
+import type { Box, Cursor, Draft, Echo, FieldState, Menu, Reading, Usage } from '../../types'
 import { MAX_LENGTH, cursorIn, isPlain, layOut } from './wrap'
 import type { Row } from './wrap'
 
@@ -22,6 +22,12 @@ export type LineNumber = { label: string; isCurrent: boolean }
 // open, with a cell after it for its cursor, or what the last command answered.
 export type Line = { text: string; hasCursor: boolean; isWarning: boolean }
 
+// The completions as drawn just above the command line, as vim's popup menu stands over its own:
+// each row's name and description, cut to the menu's cells, and which row is picked.
+export type MenuRow = { name: string; description: string; isPicked: boolean }
+
+export type MenuBlock = { rows: MenuRow[]; nameWidth: number; width: number }
+
 // What the left-hand site draws in the fullscreen terminal: the status bar on the footer's first row,
 // and over the prompt box above it the draft's rows and a row of fill on each of its rules. `rows` is
 // null where the box is left as the engine draws it; `under` is the rows other plugins pinned between
@@ -38,6 +44,7 @@ export type Block = {
   mark: string
   label: string
   line: Line | null
+  menu: MenuBlock | null
   usage: string
   // The blank cells between the bar's two halves, drawn so that they cover the engine's mark.
   gap: number
@@ -72,7 +79,7 @@ export const ORIGIN: Draft = { line: 1, column: 1, percent: 100, text: '', offse
 
 export const UNPLACED: Box = { rows: null, under: 0, isAligned: false, isPlaced: false }
 
-export const FIRST_FIELD: FieldState = { drawn: 0, isDown: false }
+export const FIRST_FIELD: FieldState = { drawn: 0, isDown: false, value: '' }
 
 // What the empty box says: what it takes, and the keys that work in the editor's mode at the time.
 export const placeholderOf = (mode: string) => {
@@ -366,6 +373,38 @@ export const fitLeft = ({ title, ...facts }: Facts & { title: string | null }): 
   return { ...richest(room, { ...facts, permission: '' }), title: fitTitle(room, title) }
 }
 
+// The menu shows this many completions at most, and stays this narrow.
+const MENU_ROWS = 8
+const MENU_NAME = 24
+const MENU_WIDTH = 72
+
+// A window of the completions the hooks keep that holds the picked one, in the rows there are: the
+// menu covers the rows of the prompt box and the bar, and nothing can be drawn above the box.
+export const menuOf = (menu: Menu | null, rows: number, room: number): MenuBlock | null => {
+  const shown = Math.min(rows, MENU_ROWS)
+
+  if (menu === null || menu.items.length === 0 || shown < 1) {
+    return null
+  }
+
+  const first = clamp(menu.picked - Math.floor(shown / 2), 0, Math.max(0, menu.items.length - shown))
+  const items = menu.items.slice(first, first + shown)
+  const nameWidth = Math.min(MENU_NAME, Math.max(...items.map(({ name }) => name.length)))
+  // Two cells lead the name, two keep it off the description, and one ends the row.
+  const width = Math.min(room, MENU_WIDTH, nameWidth + 5 + Math.max(...items.map(({ description }) => description.length)))
+  const told = Math.max(0, width - nameWidth - 5)
+
+  return {
+    rows: items.map(({ name, description }, index) => ({
+      name: truncate(name, nameWidth),
+      description: truncate(description, told),
+      isPicked: first + index === menu.picked,
+    })),
+    nameWidth,
+    width,
+  }
+}
+
 // The command line where the bar is one row after the engine's mark: what that row has room for.
 export const fitLine = (columns: number, mode: string, command: string | null, echo: Echo | null) =>
   lineOf(command, echo, columns - PILL_COLUMNS - RIGHT_COLUMNS[sizeOf(columns)] - mode.length - 4)
@@ -476,6 +515,7 @@ type Drawn = Facts & {
   isBelieved: boolean
   command: string | null
   echo: Echo | null
+  menu: Menu | null
 }
 
 const OPEN: BlockRow = { text: null, isDim: false, fillFrom: null, gap: null }
@@ -575,6 +615,8 @@ export const fitBlock = (facts: Drawn): Block => {
   // first. Otherwise never fewer rows than either count: what is drawn above the draft must not land on it.
   const count = Math.min(cap, laid !== null && box.isAligned ? laid.length : Math.max(box.rows ?? 1, laid?.length ?? 1))
   const usage = usageText(facts.usage, sizeOf(columns))
+  const shown = shownRows(laid, cap, facts)
+  const pad = padRows(shown, cap, slot, facts)
 
   return {
     columns,
@@ -585,11 +627,14 @@ export const fitBlock = (facts: Drawn): Block => {
     label: named?.label ?? '',
     // A cell leads the row, one keeps the line off the usage, and two end the row.
     line: lineOf(facts.command, facts.echo, columns - usage.length - 4),
+    // From the row under the box's top rule down to the bar: the rows the box shows, its bottom
+    // rule, the rows pinned under it, the rows added under those, and the bar's.
+    menu: menuOf(facts.menu, (shown ?? 1) + 2 + box.under + pad, columns - 2 * EDGE),
     usage,
     gap: Math.max(2, columns - (slot === 0 ? 0 : GUTTER + slot) - columnsOf(bar) - cursor.length - 2),
     rows: box.isPlaced ? blockRows(count, laid, room, facts) : null,
     numbers: lineNumbers(laid, cap, facts),
-    pad: padRows(shownRows(laid, cap, facts), cap, slot, facts),
+    pad,
     under: box.under,
     isFilled,
     isMeasured: isRelabelled,

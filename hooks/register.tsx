@@ -10,8 +10,8 @@ import type {
   Timer,
 } from 'claude-code'
 
-import type { Box, Usage } from '../types'
-import { HELP, SAID, commandOf, draftKey, fieldKey, isField, keptDraft } from './commandline/commands'
+import type { Box, MenuItem, Usage } from '../types'
+import { HELP, NEXT, PREVIOUS, SAID, commandOf, completionsOf, draftKey, fieldKey, isField, keptDraft } from './commandline/commands'
 import {
   EDGE,
   EFFORT_ENTRY,
@@ -63,6 +63,10 @@ const EXIT = 'exit'
 const WATCH_MS = 100
 const FIELD_DOWN_MS = 80
 const ECHO_MS = 3000
+// How long after Enter a completion is given to the field: the engine empties it once the submit
+// has been answered. And how many completions are kept for the menu around the picked one.
+const FIELD_VALUE_MS = 30
+const MENU_KEPT = 16
 // A prompt box is bound a moment after its session starts: how long a saved draft waits for one.
 const BOX_WAITS = [0, 100, 400, 1500]
 
@@ -82,7 +86,8 @@ const transcript = atom({ plugin: 'open-claude', key: 'transcript' } as const, n
 const usage = atom({ plugin: 'open-claude', key: 'usage' } as const, NO_USAGE)
 const command = atom({ plugin: 'open-claude', key: 'command' } as const, null)
 const echo = atom({ plugin: 'open-claude', key: 'echo' } as const, null)
-const field = atom({ plugin: 'open-claude', key: 'field' } as const, FIRST_FIELD)
+const field = atom({ plugin: 'open-claude', key: 'commandField' } as const, FIRST_FIELD)
+const menu = atom({ plugin: 'open-claude', key: 'menu' } as const, null)
 
 let poll: { timer: Timer; ms: number } | undefined
 let settle: Timer | undefined
@@ -95,8 +100,12 @@ let edits = 0
 let decorated: string | undefined
 // Whether the box was in shell mode when its hint was last drawn: what is typed there is a command.
 let isShell = false
-// The open command line: the timer that asks after its keyboard, and the times in a row it was told no.
-let line: { watch: Timer; denied: number } | undefined
+// The open command line: the timer that asks after its keyboard, the times in a row it was told no,
+// what is typed in it, and the text its field was last given.
+let line: { watch: Timer; denied: number; typed: string; given: string } | undefined
+// The completions while they are up, and Claude Code's commands as fetched for this line.
+let completion: { items: MenuItem[]; picked: number } | undefined
+let natives: MenuItem[] | undefined
 let answered: Timer | undefined
 // The turn that is running, by the id it started under and by what the hint last said.
 let turn: string | undefined
@@ -504,8 +513,11 @@ const say = async ($: EngineInterface, text: string, isWarning = false) => {
 const closeLine = async ($: EngineInterface) => {
   line?.watch.cancel()
   line = undefined
+  completion = undefined
+  natives = undefined
+  await update($, menu, () => null)
   await update($, command, () => null)
-  await update($, field, ({ drawn }) => ({ drawn: drawn + 1, isDown: true }))
+  await update($, field, ({ drawn }) => ({ drawn: drawn + 1, isDown: true, value: '' }))
   $.clock.after(FIELD_DOWN_MS, () => {
     void quietly($, 'command', update($, field, held => ({ ...held, isDown: false })))
   })
@@ -536,6 +548,8 @@ const openLine = async ($: EngineInterface, requestId: string, key: string) => {
   answered?.cancel()
   line = {
     denied: 0,
+    typed: '',
+    given: '',
     watch: $.clock.every(WATCH_MS, () => {
       void quietly($, 'command', watchLine($, requestId, key))
     }),
@@ -548,7 +562,77 @@ const openLine = async ($: EngineInterface, requestId: string, key: string) => {
 // again under it) opens the line as the first does.
 const typeLine = async ($: EngineInterface, requestId: string, key: string, typed: string) => {
   await openLine($, requestId, key)
+
+  if (line !== undefined) {
+    line.typed = typed
+  }
+
   await update($, command, () => typed)
+
+  // While the completions are up, what is typed narrows them, and past the name ends them.
+  if (completion !== undefined) {
+    const items = completionsOf(typed, await nativeItems($))
+    completion = items.length === 0 ? undefined : { items, picked: 0 }
+    await showMenu($)
+  }
+}
+
+// Claude Code's commands as the menu names them, fetched once for each time the line opens.
+const nativeItems = async ($: EngineInterface) => {
+  natives ??= (await $.command.list()).map(({ name, description }) => ({ name, description }))
+
+  return natives
+}
+
+// The menu keeps a window of the completions round the picked one: the footer draws what fits.
+const showMenu = async ($: EngineInterface) => {
+  const held = completion
+
+  if (held === undefined) {
+    await update($, menu, () => null)
+
+    return
+  }
+
+  const first = Math.max(0, Math.min(held.picked - MENU_KEPT / 2, held.items.length - MENU_KEPT))
+  await update($, menu, () => ({ items: held.items.slice(first, first + MENU_KEPT), picked: held.picked - first, total: held.items.length }))
+}
+
+// Tab or Down, and Shift+Tab or Up, in the field. The first opens the completions of the name typed
+// so far, picking the first or the last, and each after it moves the pick, round the ends.
+const stepCompletion = async ($: EngineInterface, step: number) => {
+  if (line === undefined) {
+    return
+  }
+
+  if (completion === undefined) {
+    const items = completionsOf(line.typed, await nativeItems($))
+    completion = items.length === 0 ? undefined : { items, picked: step > 0 ? 0 : items.length - 1 }
+  } else {
+    const count = completion.items.length
+    completion = { ...completion, picked: (completion.picked + step + count) % count }
+  }
+
+  await showMenu($)
+}
+
+// Enter while the completions are up takes the picked one into the line, as opencode.vim does, and
+// the next Enter runs it. The field is given the text once the engine has emptied it after Enter;
+// one it was last given already gets a space after it, so as to be another, which the engine takes.
+const takeCompletion = async ($: EngineInterface, picked: MenuItem) => {
+  if (line === undefined) {
+    return
+  }
+
+  const text = picked.name === line.given ? `${picked.name} ` : picked.name
+  line.typed = text
+  line.given = text
+  completion = undefined
+  await showMenu($)
+  await update($, command, () => text)
+  $.clock.after(FIELD_VALUE_MS, () => {
+    void quietly($, 'command', update($, field, held => ({ ...held, value: text })))
+  })
 }
 
 const draftPlace = async ($: EngineInterface) => draftKey(isStarted, await $.session.id(), await $.session.root())
@@ -652,6 +736,14 @@ const runLine = async ($: EngineInterface, typed: string) => {
 // Enter in the field: the line closes first, so that the keys are the prompt's again whatever the
 // command does, and a command that fails says so where its answer would have stood.
 const submitLine = async ($: EngineInterface, typed: string) => {
+  const picked = completion?.items[completion.picked]
+
+  if (picked !== undefined) {
+    await takeCompletion($, picked)
+
+    return
+  }
+
   await closeLine($)
 
   try {
@@ -695,6 +787,14 @@ const forgetDraft = async ($: EngineInterface) => {
   isStarted = true
 }
 
+// A command line the mod left open before it was loaded again: nothing here knows of it, and what
+// it showed stays in the session's state, so it is closed.
+const closeStaleLine = async ($: EngineInterface) => {
+  if ((await read($, command)) !== null || (await read($, menu)) !== null) {
+    await closeLine($)
+  }
+}
+
 const boot = async ($: EngineInterface) => {
   await Promise.all([
     quietly($, 'pins', loadPins($)),
@@ -710,6 +810,7 @@ const boot = async ($: EngineInterface) => {
     quietly($, 'draft', $.session.turns().then(turns => {
       isStarted = isStarted || turns > 0
     })),
+    quietly($, 'command', closeStaleLine($)),
   ])
 }
 
@@ -882,7 +983,7 @@ export const register: Register = (on, options) => {
       return beneath
     }
 
-    const { drawn, isDown } = await read($, field)
+    const { drawn, isDown, value } = await read($, field)
 
     if (isDown) {
       return beneath
@@ -898,6 +999,8 @@ export const register: Register = (on, options) => {
         {beneath}
         {CommandField(table, {
           key,
+          value,
+          guards: { previous: PREVIOUS, next: NEXT },
           onInput: typed => {
             void quietly($, 'command', typeLine($, requestId, key, typed))
           },
@@ -909,8 +1012,16 @@ export const register: Register = (on, options) => {
     )
   })
 
-  // The keys moving into the field is the command line opening.
+  // The keys moving into the field is the command line opening. Tab, Shift+Tab and the arrows in the
+  // field move the ring onto an element beside it: the completions step instead, and the ring is
+  // kept on the field by not passing the move on.
   on('ui.focus', async ($, e, next) => {
+    if (e.component === 'AbovePrompt' && e.origin.kind === 'person' && (e.element === NEXT || e.element === PREVIOUS)) {
+      void quietly($, 'command', stepCompletion($, e.element === NEXT ? 1 : -1))
+
+      return {}
+    }
+
     const moved = await next(e)
 
     if (e.component === 'AbovePrompt' && e.element !== undefined && isField(e.element) && e.origin.kind === 'person' && moved.deny === undefined) {
@@ -932,7 +1043,7 @@ export const register: Register = (on, options) => {
       return next(e)
     }
 
-    const [vim, id, level, at, spent, typed, answer] = await Promise.all([
+    const [vim, id, level, at, spent, typed, answer, offered] = await Promise.all([
       read($, isVim),
       read($, model),
       read($, effort),
@@ -940,6 +1051,7 @@ export const register: Register = (on, options) => {
       read($, usage),
       read($, command),
       read($, echo),
+      read($, menu),
     ])
     const width = e.viewport?.columns ?? WIDE
     const label = editorMode(e.props.hint, vim)
@@ -953,7 +1065,7 @@ export const register: Register = (on, options) => {
     }
 
     if (e.surface !== 'terminal' || !overlays(e.surface, e.viewport)) {
-      return StatusRow($.ui.resolve(e), fitLeft({ columns: width, mode: shown, model: id, effort: level, title: null }), fitLine(width, shown, typed, answer))
+      return StatusRow($.ui.resolve(e), fitLeft({ columns: width, mode: shown, model: id, effort: level, title: null }), fitLine(width, shown, typed, answer), offered)
     }
 
     const [stands, measured, believed, plain] = await Promise.all([read($, box), read($, reading), read($, isLabelBelieved), read($, isBoxPlain)])
@@ -978,6 +1090,7 @@ export const register: Register = (on, options) => {
       isBelieved: believed,
       command: typed,
       echo: answer,
+      menu: offered,
     })
 
     marked = block.read

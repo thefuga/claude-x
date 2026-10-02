@@ -22,6 +22,7 @@ import {
   isInserting,
   lineOf,
   locate,
+  menuOf,
   minRowsOf,
   modelName,
   permissionOf,
@@ -66,6 +67,7 @@ const BLOCK = {
   isBelieved: true,
   command: null,
   echo: null,
+  menu: null,
 }
 const rowsOf = (block: Parameters<typeof fitBlock>[0]) => fitBlock(block).rows ?? []
 
@@ -438,6 +440,31 @@ describe('format', () => {
     expect(lineOf(null, null, 40)).toBe(null)
     expect(lineOf('model claude-opus-5-5', null, 12)?.text, 'the end of a line too long for its room, and a cell for its cursor').toBe('…e-opus-5-5')
     expect(lineOf(null, { text: 'no write since last change', isWarning: true }, 12)?.text).toBe('no write si…')
+  })
+
+  test('fits the completions to the rows over the command line, keeping the picked one in sight', () => {
+    const items = Array.from({ length: 12 }, (_, index) => ({ name: `name-${index}`, description: `what ${index} does` }))
+    const shown = (picked: number, rows: number) => menuOf({ items, picked, total: 40 }, rows, 100)?.rows.map(row => [row.name, row.isPicked])
+
+    expect(shown(0, 3)).toEqual([
+      ['name-0', true],
+      ['name-1', false],
+      ['name-2', false],
+    ])
+    expect(shown(6, 3)).toEqual([
+      ['name-5', false],
+      ['name-6', true],
+      ['name-7', false],
+    ])
+    expect(shown(11, 20)?.length, 'eight rows at the most').toBe(8)
+    expect(menuOf({ items, picked: 0, total: 12 }, 0, 100), 'no room').toBe(null)
+    expect(menuOf(null, 8, 100)).toBe(null)
+
+    const long = menuOf({ items: [{ name: 'a-name-longer-than-the-column-is', description: 'x'.repeat(200) }], picked: 0, total: 1 }, 8, 60)
+
+    expect(long?.width).toBe(60)
+    expect(long?.rows[0]?.name).toHaveLength(24)
+    expect(long?.rows[0]?.description).toHaveLength(60 - 24 - 5)
   })
 
   test('gives the command line the row under the bar, up to the usage', () => {

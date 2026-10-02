@@ -546,6 +546,60 @@ describe('status line', () => {
     expect(held.logs).toEqual([])
   })
 
+  test('completes the name typed in the command line: Tab opens and steps, Enter takes the pick, the next Enter runs', async ($, on) => {
+    const clock = mock.clock(on)
+    const held = world(on)
+    await $.session.start(START)
+    await clock.settle()
+    const above = await $.ui.mount({ ...BAND, props: band(13) })
+    const left = await $.ui.mount({ ...BLOCK, props: { ...IDLE, isDraft: true } })
+    const texts = async () => (await left.findAll({ type: 'Text' })).map(text => text.text)
+    // The menu's rows as drawn: each name, and the one picked.
+    const names = async () =>
+      (await left.findAll({ type: 'Text' })).filter(text => text.text.startsWith('  ') && text.text.trim() !== '').map(text => text.text.trim())
+    const picked = async () => (await left.findAll({ type: 'Text' })).find(text => text.props.bold === true && text.text.startsWith('  '))?.text.trim()
+    // The ring the engine moves for a key, from the field onto what is drawn beside it.
+    const ring = (element: string) =>
+      $.ui.focus({ component: 'AbovePrompt', requestId: 'above-prompt', plugin: 'open-claude', element, origin: { kind: 'person' } })
+
+    await ring('command:0')
+    await above.input({ key: 'command:0', text: 'e', kind: 'change' })
+
+    expect(await ring('complete:next'), 'the ring is kept on the field').toEqual({})
+    expect(await names(), 'as many as the rows from under the box to the bar').toEqual(['e', 'edit', 'e!'])
+    expect(await picked()).toBe('e')
+
+    await ring('complete:next')
+    await ring('complete:next')
+    await ring('complete:next')
+
+    expect(await names(), 'the rows follow the pick').toEqual(['e!', 'edit!', 'effort'])
+    expect(await picked()).toBe('edit!')
+
+    await ring('complete:previous')
+    await ring('complete:previous')
+    await above.input({ key: 'command:0', text: 'e' })
+
+    expect(await texts(), 'the pick is in the line, and the menu is down').toContain(' :edit')
+    expect(await names()).toEqual([])
+
+    await clock.advance(30)
+
+    expect((await above.find({ type: 'Input' }))?.props, 'and in the field').toMatchObject({ value: 'edit' })
+
+    // Typing narrows the completions; the next Enter runs what the line holds.
+    await above.input({ key: 'command:0', text: 'comp', kind: 'change' })
+    await ring('complete:next')
+
+    expect(await texts()).toContain(' :comp')
+
+    await above.input({ key: 'command:0', text: 'comp' })
+    await clock.advance(30)
+    await above.input({ key: 'command:0', text: 'compact' })
+
+    expect(held.ran).toEqual(['compact'])
+  })
+
   test('closes the command line when Escape hands the keys back, and ends a running turn to quit by force', async ($, on) => {
     const clock = mock.clock(on)
     const held = world(on)
