@@ -1,4 +1,4 @@
-import type { Box, Cursor, Draft, Reading, Usage } from '../../types'
+import type { Box, Cursor, Draft, Echo, FieldState, Reading, Usage } from '../../types'
 import { MAX_LENGTH, cursorIn, isPlain, layOut } from './wrap'
 import type { Row } from './wrap'
 
@@ -18,6 +18,10 @@ export type BlockRow = { text: string | null; isDim: boolean; fillFrom: number |
 // A number drawn over the box's gutter: the line's, and whether the cursor is on that line.
 export type LineNumber = { label: string; isCurrent: boolean }
 
+// What the footer's last row says in place of the permission mark: the command line while it is
+// open, with a cell after it for its cursor, or what the last command answered.
+export type Line = { text: string; hasCursor: boolean; isWarning: boolean }
+
 // What the left-hand site draws in the fullscreen terminal: the status bar on the footer's first row,
 // and over the prompt box above it the draft's rows and a row of fill on each of its rules. `rows` is
 // null where the box is left as the engine draws it; `under` is the rows other plugins pinned between
@@ -33,6 +37,7 @@ export type Block = {
   // The mod's own copy of the engine's mark, drawn under the bar where the mode is known, and the usage.
   mark: string
   label: string
+  line: Line | null
   usage: string
   // The blank cells between the bar's two halves, drawn so that they cover the engine's mark.
   gap: number
@@ -66,6 +71,8 @@ type Named = Omit<Facts, 'columns'> & { permission: string }
 export const ORIGIN: Draft = { line: 1, column: 1, percent: 100, text: '', offset: 0, isDecorated: false }
 
 export const UNPLACED: Box = { rows: null, under: 0, isAligned: false, isPlaced: false }
+
+export const FIRST_FIELD: FieldState = { drawn: 0, isDown: false }
 
 // What the empty box says: what it takes, and the keys that work in the editor's mode at the time.
 export const placeholderOf = (mode: string) => {
@@ -305,6 +312,23 @@ export const truncate = (text: string, max: number) => {
   return glyphs.length <= max ? text : `${glyphs.slice(0, max - 1).join('').trimEnd()}…`
 }
 
+// The end of a text too long for its room: what is typed last is what has to show.
+const tail = (text: string, max: number) => {
+  const glyphs = [...text]
+
+  return glyphs.length <= max ? text : `…${glyphs.slice(glyphs.length - Math.max(0, max - 1)).join('')}`
+}
+
+// The command line as vim draws it, a colon and what is typed, in `room` cells with its cursor; or
+// the last answer, until it is taken down.
+export const lineOf = (command: string | null, echo: Echo | null, room: number): Line | null => {
+  if (command !== null) {
+    return { text: tail(`:${command}`, room - 1), hasCursor: true, isWarning: false }
+  }
+
+  return echo === null ? null : { text: truncate(echo.text, room), hasCursor: false, isWarning: echo.isWarning }
+}
+
 // <config>/projects/<the project's path, each character outside a-z, A-Z and 0-9 a dash>/<session>.jsonl
 export const transcriptPath = (configDirectory: string, root: string, sessionId: string) =>
   `${configDirectory}/projects/${root.replace(/[^a-zA-Z0-9]/g, '-')}/${sessionId}.jsonl`
@@ -341,6 +365,10 @@ export const fitLeft = ({ title, ...facts }: Facts & { title: string | null }): 
 
   return { ...richest(room, { ...facts, permission: '' }), title: fitTitle(room, title) }
 }
+
+// The command line where the bar is one row after the engine's mark: what that row has room for.
+export const fitLine = (columns: number, mode: string, command: string | null, echo: Echo | null) =>
+  lineOf(command, echo, columns - PILL_COLUMNS - RIGHT_COLUMNS[sizeOf(columns)] - mode.length - 4)
 
 export const fitRight = (columns: number, modes: readonly string[], cursor: Cursor, usage: Usage): Right => ({
   cursor: labelled(columns, modes, cursor),
@@ -446,6 +474,8 @@ type Drawn = Facts & {
   minRows: number
   isRelabelled: boolean
   isBelieved: boolean
+  command: string | null
+  echo: Echo | null
 }
 
 const OPEN: BlockRow = { text: null, isDim: false, fillFrom: null, gap: null }
@@ -544,6 +574,7 @@ export const fitBlock = (facts: Drawn): Block => {
   // A draft that stood in the engine's rows a moment ago is taken at its own count, which is known
   // first. Otherwise never fewer rows than either count: what is drawn above the draft must not land on it.
   const count = Math.min(cap, laid !== null && box.isAligned ? laid.length : Math.max(box.rows ?? 1, laid?.length ?? 1))
+  const usage = usageText(facts.usage, sizeOf(columns))
 
   return {
     columns,
@@ -552,7 +583,9 @@ export const fitBlock = (facts: Drawn): Block => {
     slot,
     mark: named?.mark ?? '',
     label: named?.label ?? '',
-    usage: usageText(facts.usage, sizeOf(columns)),
+    // A cell leads the row, one keeps the line off the usage, and two end the row.
+    line: lineOf(facts.command, facts.echo, columns - usage.length - 4),
+    usage,
     gap: Math.max(2, columns - (slot === 0 ? 0 : GUTTER + slot) - columnsOf(bar) - cursor.length - 2),
     rows: box.isPlaced ? blockRows(count, laid, room, facts) : null,
     numbers: lineNumbers(laid, cap, facts),

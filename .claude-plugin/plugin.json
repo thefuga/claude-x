@@ -26,6 +26,12 @@
       "title": "Color the draft's markdown",
       "description": "Paint the draft as it is typed: headings, emphasis, code, links, lists and quotes, and the code inside a fence by the language it names. The colors drop when the draft changes without a typed key (a new line from a rebound Enter, an edit in vim's normal mode) and return at the next one. Off leaves the draft as Claude Code draws it.",
       "default": true
+    },
+    "commandLine": {
+      "type": "boolean",
+      "title": "A vim command line",
+      "description": "The focus chord for the area above the prompt (Ctrl+X Tab, or the key bound to abovePrompt:focus) opens a command line in the footer's last row: :w saves the draft for the session, :e loads it back, :q quits, each with its ! to force, :wq saves and quits, and any other name runs the slash command of that name. Enter runs the line and Escape leaves it. Off draws no field and keeps no drafts.",
+      "default": true
     }
   }
 }

@@ -12,6 +12,7 @@ const BADGES: Record<string, string> = {
   INSERT: '#b8bb26',
   VISUAL: '#d3869b',
   SHELL: '#fb4934',
+  COMMAND: '#fabd2f',
 }
 
 // The permission modes, in the colors Claude Code's own mark takes under the mod's theme.
@@ -28,6 +29,8 @@ export const theme = {
   effort: '#fe8019',
   bar: '#4e4e4e',
   tab: { text: '#ebdbb2', background: '#3a3a3a' },
+  // What the command line says when it will not do as asked.
+  warning: '#fb4934',
 }
 
 // A mark of the markup and a comment: a gray off the ramp, which the palette's own #928374 rounds away from.

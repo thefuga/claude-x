@@ -20,6 +20,7 @@ import {
   gutterLabel,
   isBelieved,
   isInserting,
+  lineOf,
   locate,
   minRowsOf,
   modelName,
@@ -63,6 +64,8 @@ const BLOCK = {
   minRows: 1,
   isRelabelled: true,
   isBelieved: true,
+  command: null,
+  echo: null,
 }
 const rowsOf = (block: Parameters<typeof fitBlock>[0]) => fitBlock(block).rows ?? []
 
@@ -418,5 +421,28 @@ describe('format', () => {
     })
     expect(fitTabRow(100, null, ['focus'], NO_USAGE).note).toBe('0 (0%)')
     expect(fitTabRow(64, 'A session with quite a long title to it', [], USAGE).title).toBe('A session with quite a…')
+  })
+
+  test("words the footer's last row for the command line: what is typed after a colon, or the last answer", () => {
+    expect(lineOf('w', null, 40)).toEqual({ text: ':w', hasCursor: true, isWarning: false })
+    expect(lineOf('', { text: 'draft saved', isWarning: false }, 40), 'an open line stands over an answer').toEqual({
+      text: ':',
+      hasCursor: true,
+      isWarning: false,
+    })
+    expect(lineOf(null, { text: 'unknown command: :foo', isWarning: true }, 40)).toEqual({
+      text: 'unknown command: :foo',
+      hasCursor: false,
+      isWarning: true,
+    })
+    expect(lineOf(null, null, 40)).toBe(null)
+    expect(lineOf('model claude-opus-5-5', null, 12)?.text, 'the end of a line too long for its room, and a cell for its cursor').toBe('…e-opus-5-5')
+    expect(lineOf(null, { text: 'no write since last change', isWarning: true }, 12)?.text).toBe('no write si…')
+  })
+
+  test('gives the command line the row under the bar, up to the usage', () => {
+    expect(fitBlock(BLOCK).line).toBe(null)
+    expect(fitBlock({ ...BLOCK, command: 'wq' }).line).toEqual({ text: ':wq', hasCursor: true, isWarning: false })
+    expect(fitBlock({ ...BLOCK, columns: 64, command: 'x'.repeat(80) }).line?.text).toHaveLength(64 - '19.7K (2%)'.length - 5)
   })
 })

@@ -12,7 +12,7 @@ const MODES = { plugin: 'open-claude', component: 'SessionMode', viewport: VIEWP
 const IDLE = { isDraft: false, isWorking: false, hint: '? for shortcuts' }
 // The engine's own line in any mode but the manual one.
 const CYCLING = { ...IDLE, hint: '(shift+tab to cycle) · ← for agents' }
-const BAND = { plugin: 'open-claude', component: 'AbovePrompt', surface: 'terminal', viewport: FULLSCREEN } as const
+const BAND = { plugin: 'open-claude', component: 'AbovePrompt', surface: 'terminal', viewport: FULLSCREEN, requestId: 'above-prompt' } as const
 const BLOCK = { ...HINT, surface: 'terminal', viewport: FULLSCREEN } as const
 const TABS = { ...MODES, surface: 'terminal', viewport: FULLSCREEN } as const
 const FILL = '#4e4e4e'
@@ -80,6 +80,10 @@ const VIM: ConfigRow = {
   isLocked: false,
 }
 
+// The slash commands the engine has in these tests.
+const COMMANDS = ['effort', 'rename', 'exit', 'compact']
+const HOME_DRAFT = 'draft:home:/home/me/open-claude'
+
 type World = {
   box: { text: string; cursor: number }
   announced: string
@@ -88,12 +92,31 @@ type World = {
   reads: number
   version: string
   kept: Record<string, unknown>
+  // The slash commands run, each with what followed its name, and the turns cut short.
+  ran: string[]
+  aborted: string[]
+  // Whether the band above the prompt still has the keyboard, as the engine answers a focus.
+  hasKeyboard: boolean
+  // What the mod wrote to the debug log: what went wrong in it and was passed over.
+  logs: string[]
 }
 
 // What the engine answers beneath the mod: a session on Opus with one title in its transcript, on a
 // version of Claude Code the permission label was checked on.
 const world = (on: On): World => {
-  const held: World = { box: { text: '', cursor: 0 }, announced: '', rows: [], settings: {}, reads: 0, version: '2.1.287', kept: {} }
+  const held: World = {
+    box: { text: '', cursor: 0 },
+    announced: '',
+    rows: [],
+    settings: {},
+    reads: 0,
+    version: '2.1.287',
+    kept: {},
+    ran: [],
+    aborted: [],
+    hasKeyboard: true,
+    logs: [],
+  }
 
   mock.env(on, { HOME: '/home/me' })
   on('store.get', ($, e) => ({ value: held.kept[e.key] }))
@@ -102,8 +125,33 @@ const world = (on: On): World => {
 
     return { value: undefined }
   })
+  on('store.delete', ($, e) => {
+    held.kept = Object.fromEntries(Object.entries(held.kept).filter(([key]) => key !== e.key))
+
+    return { value: undefined }
+  })
   on('session.version', () => ({ value: { version: held.version } }))
+  on('session.turns', () => ({ value: 0 }))
+  on('classic.SessionStart', () => ({}))
   on('classic.UserPromptSubmit', () => ({}))
+  on('turn.start', ($, e) => ({ turnId: e.turnId }))
+  on('turn.abort', ($, e) => {
+    held.aborted = [...held.aborted, e.turnId]
+
+    return { value: undefined }
+  })
+  on('ui.log', ($, e) => {
+    held.logs = [...held.logs, e.text]
+
+    return { value: undefined }
+  })
+  on('command.list', () => ({ value: COMMANDS.map(name => ({ name, description: '', source: 'builtin' as const })) }))
+  on('ui.focus', () => (held.hasKeyboard ? {} : { deny: 'that site does not hold the keyboard' }))
+  on('prompt.fill', ($, e) => {
+    held.box = { text: e.text, cursor: e.text.length }
+
+    return { isFilled: true }
+  })
   on('classic.ConfigChange', () => ({}))
   on('ui.message', () => ({}))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
@@ -115,7 +163,15 @@ const world = (on: On): World => {
   on('config.list', () => ({ value: held.rows }))
   on('settings.read', () => ({ value: held.settings }))
   on('fs.exists', () => ({ value: true }))
-  on('command.run', () => ({}))
+  on('command.run', ($, e) => {
+    if (!COMMANDS.includes(e.command)) {
+      throw new Error(`no command named ${e.command}`)
+    }
+
+    held.ran = [...held.ran, `${e.command} ${e.args}`.trim()]
+
+    return {}
+  })
   on('classic.Stop', () => ({}))
   on('classic.PostModelSwitch', () => ({}))
   on('prompt.read', () => {
@@ -412,6 +468,168 @@ describe('status line', () => {
     await clock.settle()
 
     expect((await type($, '# fix')).decorations).toBeUndefined()
+  })
+
+  test("opens a command line in the footer's last row, runs what is typed there and answers in its place", async ($, on) => {
+    const clock = mock.clock(on)
+    const held = world(on)
+    await $.session.start(START)
+    await clock.settle()
+    const above = await $.ui.mount({ ...BAND, props: band(13) })
+    const left = await $.ui.mount({ ...BLOCK, props: { ...IDLE, isDraft: true } })
+    const texts = async () => (await left.findAll({ type: 'Text' })).map(text => text.text)
+    // The person's focus chord, landing on the field.
+    const focus = (element: string) =>
+      $.ui.focus({ component: 'AbovePrompt', requestId: 'above-prompt', plugin: 'open-claude', element, origin: { kind: 'person' } })
+    const run = async (key: string, typed: string) => {
+      await focus(key)
+      await above.input({ key, text: typed })
+      await clock.advance(80)
+    }
+
+    // The field stands in a box of no height, for the chord to find.
+    expect((await above.find({ type: 'Input' }))?.key).toBe('command:0')
+    expect((await above.findAll({ type: 'Box' })).map(box => box.props.height)).toContain(0)
+    expect(await texts()).not.toContain(' :')
+
+    await focus('command:0')
+
+    expect(await left.find({ type: 'Text', text: 'COMMAND' })).toBeDefined()
+    expect(await texts()).toContain(' :')
+
+    held.box = { text: 'fix the bar', cursor: 11 }
+    await above.input({ key: 'command:0', text: 'w', kind: 'change' })
+
+    expect(await texts()).toContain(' :w')
+
+    await above.input({ key: 'command:0', text: 'w' })
+
+    expect(held.kept[HOME_DRAFT]).toBe('fix the bar')
+    expect(await texts()).toContain(' draft saved')
+    expect(await left.find({ type: 'Text', text: 'COMMAND' })).toBeUndefined()
+    expect(await above.find({ type: 'Input' }), 'left undrawn, which hands the keys back').toBeUndefined()
+
+    await clock.advance(80)
+
+    expect((await above.find({ type: 'Input' }))?.key, 'another field, with nothing typed in it').toBe('command:1')
+
+    // A draft changed since it was saved keeps the session and itself from being dropped.
+    held.box = { text: 'fix the bar and the tab', cursor: 0 }
+    await run('command:1', 'q')
+
+    expect((await left.find({ type: 'Text', text: 'no write since last change (:q! to override)' }))?.props).toMatchObject({ color: '#fb4934' })
+    expect(held.ran).toEqual([])
+
+    await run('command:2', 'e')
+
+    expect(await texts()).toContain(' no write since last change (add ! to override)')
+    expect(held.box.text).toBe('fix the bar and the tab')
+
+    await run('command:3', 'e!')
+
+    expect(held.box).toEqual({ text: 'fix the bar', cursor: 11 })
+
+    await run('command:4', 'q')
+
+    expect(held.ran).toEqual(['exit'])
+
+    // Any other name is a slash command's; one the engine does not know is said so.
+    await run('command:5', 'compact keep the plan')
+    await run('command:6', 'nosuch')
+
+    expect(held.ran).toEqual(['exit', 'compact keep the plan'])
+    expect(await texts()).toContain(' unknown command: :nosuch')
+
+    await clock.advance(3000)
+
+    expect(await texts(), 'an answer is taken down after a while').not.toContain(' unknown command: :nosuch')
+    expect(held.logs).toEqual([])
+  })
+
+  test('closes the command line when Escape hands the keys back, and ends a running turn to quit by force', async ($, on) => {
+    const clock = mock.clock(on)
+    const held = world(on)
+    await $.session.start(START)
+    await clock.settle()
+    const above = await $.ui.mount({ ...BAND, props: band(13) })
+    const left = await $.ui.mount({ ...BLOCK, props: { ...IDLE, isWorking: true } })
+    const focus = (element: string) =>
+      $.ui.focus({ component: 'AbovePrompt', requestId: 'above-prompt', plugin: 'open-claude', element, origin: { kind: 'person' } })
+
+    await focus('command:0')
+    await above.input({ key: 'command:0', text: 'wq', kind: 'change' })
+
+    expect(await left.find({ type: 'Text', text: 'COMMAND' })).toBeDefined()
+
+    // Escape raises nothing: the engine only refuses the next focus asked of the band.
+    held.hasKeyboard = false
+    await clock.advance(100)
+
+    expect(await left.find({ type: 'Text', text: 'COMMAND' }), 'one refusal may be a ring on the move').toBeDefined()
+
+    await clock.advance(100)
+
+    expect(await left.find({ type: 'Text', text: 'COMMAND' })).toBeUndefined()
+
+    held.hasKeyboard = true
+    await clock.advance(80)
+    await $.turn.start({ text: 'count to a hundred', turnId: 'turn-1' })
+    await focus('command:1')
+    await above.input({ key: 'command:1', text: 'q' })
+
+    expect(await left.find({ type: 'Text', text: 'session is running (:q! to override)' })).toBeDefined()
+    expect(held.ran).toEqual([])
+
+    await clock.advance(80)
+    await focus('command:2')
+    await above.input({ key: 'command:2', text: 'q!' })
+
+    expect(held.aborted).toEqual(['turn-1'])
+    expect(held.ran).toEqual(['exit'])
+  })
+
+  test('puts a saved draft back when its session is opened again, and drops it when a prompt is sent', async ($, on) => {
+    const clock = mock.clock(on)
+    const held = world(on)
+    held.kept = { 'draft:session:abc': 'the draft of that session', [HOME_DRAFT]: 'the draft of the folder' }
+    await $.session.start(START)
+    await clock.settle()
+
+    await $.classic.SessionStart({ source: 'startup', session_id: 'abc' })
+    await clock.settle()
+
+    expect(held.box.text, 'a session nothing was sent in has the draft of its folder').toBe('the draft of the folder')
+
+    held.box = { text: '', cursor: 0 }
+    await $.classic.SessionStart({ source: 'resume', session_id: 'abc' })
+    await clock.settle()
+
+    expect(held.box.text).toBe('the draft of that session')
+
+    held.box = { text: 'typed already', cursor: 0 }
+    await $.classic.SessionStart({ source: 'resume', session_id: 'abc' })
+    await clock.settle()
+
+    expect(held.box.text, 'a box that holds text is left alone').toBe('typed already')
+
+    await $.classic.UserPromptSubmit({ prompt: 'typed already', permission_mode: 'auto' })
+    await clock.settle()
+
+    expect(Object.keys(held.kept)).toEqual([HOME_DRAFT])
+  })
+
+  test('draws no field and keeps no drafts with the option off', { options: { commandLine: false } }, async ($, on) => {
+    const clock = mock.clock(on)
+    const held = world(on)
+    held.kept = { [HOME_DRAFT]: 'the draft of the folder' }
+    await $.session.start(START)
+    await clock.settle()
+    const above = await $.ui.mount({ ...BAND, props: band(13) })
+    await $.classic.SessionStart({ source: 'startup', session_id: 'abc' })
+    await clock.settle()
+
+    expect(await above.find({ type: 'Input' })).toBeUndefined()
+    expect(held.box.text).toBe('')
   })
 
   test('takes up what a change to the settings brings: the vim editor, a status line under the box', async ($, on) => {

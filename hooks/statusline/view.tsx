@@ -1,10 +1,15 @@
 import type { Elements } from 'claude-code'
 
 import { EDGE, GUTTER } from './format'
-import type { Bar, Block, Left, Right, Segments, TabRow } from './format'
+import type { Bar, Block, Left, Line, Right, Segments, TabRow } from './format'
 import { badgeColor, permissionColor, theme } from './theme'
 
 type Table = Pick<Elements['terminal'], 'Box' | 'Text'>
+
+type Fields = Pick<Elements['terminal'], 'Box' | 'Input'>
+
+// What the command line's field is drawn with: its address, and what typing and Enter run.
+type Field = { key: string; onInput: (value: string) => void; onSubmit: (value: string) => void }
 
 type Terminal = Pick<Elements['terminal'], 'Box' | 'Text' | 'Client'>
 
@@ -76,12 +81,37 @@ export const StatusRight = ({ Box, Text }: Table, { cursor, usage }: Right) => (
   </Box>
 )
 
-// The bar alone, in one row after the engine's own permission mark.
-export const StatusRow = (table: Table, row: Segments) => {
+// The command line or its last answer, and after an open line the cell its cursor stands in.
+const said = ({ Text }: Table, { text, hasCursor, isWarning }: Line) => [
+  <Text color={isWarning ? theme.warning : undefined}>{` ${text}`}</Text>,
+  hasCursor && <Text inverse> </Text>,
+]
+
+// The bar alone, in one row after the engine's own permission mark. While the command line has
+// something to say, it says it after the mode's badge.
+export const StatusRow = (table: Table, row: Segments, line: Line | null) => {
   const { Box } = table
 
-  return <Box>{segments(table, row, {})}</Box>
+  if (line === null) {
+    return <Box>{segments(table, row, {})}</Box>
+  }
+
+  return (
+    <Box>
+      {segments(table, { mode: row.mode, permission: '', model: '', provider: '', effort: '' }, {})}
+      {said(table, line)}
+    </Box>
+  )
 }
+
+// The command line's field, which is typed into where nobody sees it: it stands in the band above
+// the prompt, the one place a mod's field can take the keyboard, in a box of no height, and what
+// is typed is drawn in the footer, where vim has its command line.
+export const CommandField = ({ Box, Input }: Fields, { key, onInput, onSubmit }: Field) => (
+  <Box height={0} overflow="hidden">
+    <Input key={key} autoFocus onInput={onInput} onSubmit={onSubmit} />
+  </Box>
+)
 
 export const StatusNote = ({ Text }: Table, text: string) => <Text dimColor>{text}</Text>
 
@@ -115,11 +145,15 @@ export const StatusTabs = (table: Table, { columns, title, note }: TabRow) => {
 // A box that is to stand taller than its draft gets `pad` rows more: its own rule is blanked, the
 // tree takes that many rows ahead of the bar, all but the last blanked too (the engine's mark is
 // in the first, and wraps onto the second), and the last one is drawn as the rule.
-export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, mark, label, usage, numbers, pad, under, isMeasured }: Block) => {
+//
+// The footer's last row is the command line's, as the screen's last row is in vim: while it is open
+// or has something to say, that stands where the copy of the mark does.
+export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, mark, label, line, usage, numbers, pad, under, isMeasured }: Block) => {
   const { Box, Text, Client } = table
   const at: Place = (top, column, width) => ({ position: 'absolute', top, right: columns - EDGE - column - width, width })
   const start = slot === 0 ? 0 : GUTTER + slot
   const lead = mark === '' ? '' : ` ${mark}`
+  const taken = line === null ? lead.length : line.text.length + (line.hasCursor ? 2 : 1)
 
   return (
     <Box flexDirection="column" height={pad + 2}>
@@ -146,10 +180,14 @@ export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, 
         <Text dimColor>{`${bar.cursor}  `}</Text>
       </Box>
       <Box {...at(pad + 1, 0, columns)}>
-        <Text color={permissionColor(label)} dimColor={label === 'Manual'}>
-          {lead}
-        </Text>
-        <Text>{cells(columns - lead.length - usage.length - 2)}</Text>
+        {line === null ? (
+          <Text color={permissionColor(label)} dimColor={label === 'Manual'}>
+            {lead}
+          </Text>
+        ) : (
+          said(table, line)
+        )}
+        <Text>{cells(columns - taken - usage.length - 2)}</Text>
         <Text dimColor>{`${usage}  `}</Text>
       </Box>
       {numbers?.map(

@@ -11,9 +11,11 @@ import type {
 } from 'claude-code'
 
 import type { Box, Usage } from '../types'
+import { HELP, SAID, commandOf, draftKey, fieldKey, isField, keptDraft } from './commandline/commands'
 import {
   EDGE,
   EFFORT_ENTRY,
+  FIRST_FIELD,
   GUTTER,
   MIN_OVERLAID_COLUMNS,
   NO_USAGE,
@@ -27,6 +29,7 @@ import {
   effortLevel,
   fitBlock,
   fitLeft,
+  fitLine,
   fitRight,
   isBelieved,
   isInserting,
@@ -39,7 +42,7 @@ import {
   verdictsOf,
 } from './statusline/format'
 import { theme } from './statusline/theme'
-import { StatusBlock, StatusNote, StatusRow } from './statusline/view'
+import { CommandField, StatusBlock, StatusNote, StatusRow } from './statusline/view'
 import { layOut } from './statusline/wrap'
 import { paint } from './syntax/paint'
 
@@ -53,6 +56,15 @@ const TALL = 40
 const WHOLE_DRAFT = 1_000_000
 // Where the verdicts on the permission label are kept between sessions.
 const VERDICTS = 'label-verdicts'
+// The slash command that quits.
+const EXIT = 'exit'
+// How often an open command line asks whether it still has the keyboard, how long its field is
+// left undrawn to hand the keys back, and how long an answer stays in the footer.
+const WATCH_MS = 100
+const FIELD_DOWN_MS = 80
+const ECHO_MS = 3000
+// A prompt box is bound a moment after its session starts: how long a saved draft waits for one.
+const BOX_WAITS = [0, 100, 400, 1500]
 
 const input = atom({ plugin: 'open-claude', key: 'input' } as const, ORIGIN)
 const box = atom({ plugin: 'open-claude', key: 'box' } as const, UNPLACED)
@@ -68,6 +80,9 @@ const isVim = atom({ plugin: 'open-claude', key: 'isVim' } as const, false)
 const title = atom({ plugin: 'open-claude', key: 'title' } as const, null)
 const transcript = atom({ plugin: 'open-claude', key: 'transcript' } as const, null)
 const usage = atom({ plugin: 'open-claude', key: 'usage' } as const, NO_USAGE)
+const command = atom({ plugin: 'open-claude', key: 'command' } as const, null)
+const echo = atom({ plugin: 'open-claude', key: 'echo' } as const, null)
+const field = atom({ plugin: 'open-claude', key: 'field' } as const, FIRST_FIELD)
 
 let poll: { timer: Timer; ms: number } | undefined
 let settle: Timer | undefined
@@ -80,6 +95,16 @@ let edits = 0
 let decorated: string | undefined
 // Whether the box was in shell mode when its hint was last drawn: what is typed there is a command.
 let isShell = false
+// The open command line: the timer that asks after its keyboard, and the times in a row it was told no.
+let line: { watch: Timer; denied: number } | undefined
+let answered: Timer | undefined
+// The turn that is running, by the id it started under and by what the hint last said.
+let turn: string | undefined
+let isWorking = false
+// Whether a prompt was sent in this session: until one is, its draft is kept for its folder.
+let isStarted = false
+// Whether a draft loaded back is painted as a typed one is.
+let isPainted = true
 let band: { maxRows: number; height: number } | undefined
 // The plugins with a status line pinned under the prompt: a row each, between its rule and the footer.
 let pinned = new Set<string>()
@@ -464,6 +489,212 @@ const adoptSession = async ($: EngineInterface, path: string, given: string | un
   await syncTitle($)
 }
 
+// What the command line answers stands in the footer's last row, as vim's messages do, for a while.
+const say = async ($: EngineInterface, text: string, isWarning = false) => {
+  answered?.cancel()
+  await update($, echo, () => ({ text, isWarning }))
+  answered = $.clock.after(ECHO_MS, () => {
+    void quietly($, 'command', update($, echo, () => null))
+  })
+}
+
+// The command line closes when its command is run and when the keys go back to the prompt. A field
+// that is not drawn can hold no keyboard, so leaving it out of one drawing is what hands the keys
+// back, and the one drawn after it is another field, with nothing typed in it.
+const closeLine = async ($: EngineInterface) => {
+  line?.watch.cancel()
+  line = undefined
+  await update($, command, () => null)
+  await update($, field, ({ drawn }) => ({ drawn: drawn + 1, isDown: true }))
+  $.clock.after(FIELD_DOWN_MS, () => {
+    void quietly($, 'command', update($, field, held => ({ ...held, isDown: false })))
+  })
+}
+
+// Escape hands the keys back to the prompt and raises nothing. The engine refuses to move the ring
+// of a site that does not hold the keyboard, so asking it to keep the ring where it is tells; two
+// refusals in a row, since a ring on the move is refused too. A call that fails is as good as one.
+const watchLine = async ($: EngineInterface, requestId: string, key: string) => {
+  const held = await $.ui.focus({ requestId, key }).catch((error: unknown) => ({ deny: String(error) }))
+
+  if (line === undefined) {
+    return
+  }
+
+  line.denied = held.deny === undefined ? 0 : line.denied + 1
+
+  if (line.denied >= 2) {
+    await closeLine($)
+  }
+}
+
+const openLine = async ($: EngineInterface, requestId: string, key: string) => {
+  if (line !== undefined) {
+    return
+  }
+
+  answered?.cancel()
+  line = {
+    denied: 0,
+    watch: $.clock.every(WATCH_MS, () => {
+      void quietly($, 'command', watchLine($, requestId, key))
+    }),
+  }
+  await update($, echo, () => null)
+  await update($, command, () => '')
+}
+
+// A key typed in the field. One typed in a field nobody saw taking the keyboard (the mod was loaded
+// again under it) opens the line as the first does.
+const typeLine = async ($: EngineInterface, requestId: string, key: string, typed: string) => {
+  await openLine($, requestId, key)
+  await update($, command, () => typed)
+}
+
+const draftPlace = async ($: EngineInterface) => draftKey(isStarted, await $.session.id(), await $.session.root())
+
+const readDraft = async ($: EngineInterface) => keptDraft(await $.store.get(await draftPlace($)))
+
+// The box takes a draft whole, and where the draft is painted, with its colors: a fill is no
+// keystroke, so nothing else would paint it before the next one.
+const fillDraft = ($: EngineInterface, text: string) =>
+  $.prompt.fill({ text, mode: 'replace', ...(isPainted && text !== '' && { decorations: paint(text, false) }) })
+
+const saveDraft = async ($: EngineInterface) => {
+  const { text } = await $.prompt.read()
+  const place = await draftPlace($)
+
+  if (text === '') {
+    await $.store.delete(place)
+    await say($, SAID.cleared)
+
+    return
+  }
+
+  await $.store.set(place, text)
+  await say($, SAID.saved)
+}
+
+const reloadDraft = async ($: EngineInterface, isForced: boolean) => {
+  const [{ text }, saved] = await Promise.all([$.prompt.read(), readDraft($)])
+
+  if (text !== saved && !isForced) {
+    await say($, SAID.unsavedReload, true)
+
+    return
+  }
+
+  await fillDraft($, saved)
+}
+
+// Quitting is the engine's own `/exit`, which waits for a turn to end: a forced quit ends it first.
+const quit = async ($: EngineInterface, isForced: boolean, isSaving: boolean) => {
+  const [{ text }, saved] = await Promise.all([$.prompt.read(), readDraft($)])
+
+  if (!isForced && !isSaving && text !== saved) {
+    await say($, SAID.unsavedQuit, true)
+
+    return
+  }
+
+  if (!isForced && isWorking) {
+    await say($, SAID.running(isSaving ? 'wq' : 'q'), true)
+
+    return
+  }
+
+  if (isSaving) {
+    await saveDraft($)
+  }
+
+  if (isWorking && turn !== undefined) {
+    await $.turn.abort({ turnId: turn })
+  }
+
+  await $.command.run({ command: EXIT })
+}
+
+// Any other name is a slash command's, or one of its aliases, which only running it tells: the
+// engine refuses a name it does not know, and the list it gives has no aliases in it.
+const runCommand = async ($: EngineInterface, name: string, args: string) => {
+  try {
+    await $.command.run({ command: name, args })
+  } catch (error) {
+    if ((await $.command.list()).some(entry => entry.name === name)) {
+      throw error
+    }
+
+    await say($, SAID.unknown(name), true)
+  }
+}
+
+const runLine = async ($: EngineInterface, typed: string) => {
+  const action = commandOf(typed)
+
+  if (action.kind === 'refused') {
+    await say($, action.reason, true)
+  } else if (action.kind === 'save') {
+    await saveDraft($)
+  } else if (action.kind === 'reload') {
+    await reloadDraft($, action.isForced)
+  } else if (action.kind === 'quit') {
+    await quit($, action.isForced, action.isSaving)
+  } else if (action.kind === 'help') {
+    // A transcript notice is one line: a line break in it is drawn as a mark.
+    HELP.forEach(row => {
+      $.ui.log(row)
+    })
+  } else if (action.kind === 'other') {
+    await runCommand($, action.command, action.args)
+  }
+}
+
+// Enter in the field: the line closes first, so that the keys are the prompt's again whatever the
+// command does, and a command that fails says so where its answer would have stood.
+const submitLine = async ($: EngineInterface, typed: string) => {
+  await closeLine($)
+
+  try {
+    await runLine($, typed)
+  } catch (error) {
+    await say($, `command failed: ${error instanceof Error ? error.message : String(error)}`, true)
+  }
+}
+
+// A session that starts, is opened again or is cleared. The event says which: the session is not
+// bound to the mod yet, so its turns cannot be counted, and only one that was opened again has had
+// a prompt sent in it. That says where its draft is kept, and a draft kept there is put back in an
+// empty box once there is a box. A compaction starts nothing the person sees, and loads none.
+const adoptDraft = async ($: EngineInterface, sessionId: string, source: string) => {
+  isStarted = source !== 'startup' && source !== 'clear'
+  const saved = source === 'compact' ? '' : keptDraft(await $.store.get(draftKey(isStarted, sessionId, await $.session.root())))
+
+  if (saved === '') {
+    return
+  }
+
+  for (const wait of BOX_WAITS) {
+    await $.clock.sleep(wait)
+
+    if ((await $.prompt.read()).text !== '') {
+      return
+    }
+
+    const { isFilled, refusal } = await fillDraft($, saved)
+
+    if (isFilled || refusal !== 'no_composer') {
+      return
+    }
+  }
+}
+
+// A prompt that is sent takes its draft with it, as in opencode.vim: the one kept for the session,
+// or for the folder when this is the session's first.
+const forgetDraft = async ($: EngineInterface) => {
+  await $.store.delete(await draftPlace($))
+  isStarted = true
+}
+
 const boot = async ($: EngineInterface) => {
   await Promise.all([
     quietly($, 'pins', loadPins($)),
@@ -475,11 +706,16 @@ const boot = async ($: EngineInterface) => {
     quietly($, 'usage', syncUsage($)),
     quietly($, 'cursor', syncBox($)),
     quietly($, 'title', syncTitle($)),
+    // The mod loaded again under a running session: a session that only starts is not counted yet.
+    quietly($, 'draft', $.session.turns().then(turns => {
+      isStarted = isStarted || turns > 0
+    })),
   ])
 }
 
 export const register: Register = (on, options) => {
   const minRows = minRowsOf(options.minLines)
+  isPainted = options.syntax !== false
 
   // Only the fullscreen terminal lets a site draw outside itself, and only there is the box laid out
   // as the overlay expects.
@@ -502,6 +738,10 @@ export const register: Register = (on, options) => {
     void quietly($, 'usage', syncUsage($))
     void quietly($, 'cursor', syncBox($))
 
+    if (options.commandLine !== false) {
+      void quietly($, 'draft', adoptDraft($, e.session_id, e.source))
+    }
+
     return next(e)
   })
 
@@ -513,6 +753,17 @@ export const register: Register = (on, options) => {
     if (e.agent_id === undefined && e.permission_mode !== undefined) {
       void quietly($, 'label', judgeLabel($, e.permission_mode))
     }
+
+    if (e.agent_id === undefined) {
+      void quietly($, 'draft', forgetDraft($))
+    }
+
+    return next(e)
+  })
+
+  // The running turn's id is what a forced quit ends it by.
+  on('turn.start', ($, e, next) => {
+    turn = e.turnId
 
     return next(e)
   })
@@ -616,13 +867,57 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('ui.render', { component: 'AbovePrompt' }, ($, e, next) => {
+  // The band above the prompt tells how tall the prompt stands, and is where the command line's
+  // field is: unseen, under whatever else is drawn there, until the person's focus chord
+  // (`abovePrompt:focus`) moves the keys into it.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.viewport !== undefined) {
       noteBand($, e.props.maxRows, e.viewport.rows)
       noteGutter($, e.props.view.agentId !== undefined || e.props.bodyColumns !== e.viewport.columns)
     }
 
-    return next(e)
+    const beneath = await next(e)
+
+    if (options.commandLine === false || e.surface !== 'terminal') {
+      return beneath
+    }
+
+    const { drawn, isDown } = await read($, field)
+
+    if (isDown) {
+      return beneath
+    }
+
+    const table = $.ui.resolve(e)
+    const { Box } = table
+    const { requestId } = e
+    const key = fieldKey(drawn)
+
+    return (
+      <Box flexDirection="column">
+        {beneath}
+        {CommandField(table, {
+          key,
+          onInput: typed => {
+            void quietly($, 'command', typeLine($, requestId, key, typed))
+          },
+          onSubmit: typed => {
+            void quietly($, 'command', submitLine($, typed))
+          },
+        })}
+      </Box>
+    )
+  })
+
+  // The keys moving into the field is the command line opening.
+  on('ui.focus', async ($, e, next) => {
+    const moved = await next(e)
+
+    if (e.component === 'AbovePrompt' && e.element !== undefined && isField(e.element) && e.origin.kind === 'person' && moved.deny === undefined) {
+      void quietly($, 'command', openLine($, e.requestId, e.element))
+    }
+
+    return moved
   })
 
   on('ui.message', ($, e, next) => {
@@ -637,17 +932,28 @@ export const register: Register = (on, options) => {
       return next(e)
     }
 
-    const [vim, id, level, at, spent] = await Promise.all([read($, isVim), read($, model), read($, effort), read($, input), read($, usage)])
+    const [vim, id, level, at, spent, typed, answer] = await Promise.all([
+      read($, isVim),
+      read($, model),
+      read($, effort),
+      read($, input),
+      read($, usage),
+      read($, command),
+      read($, echo),
+    ])
     const width = e.viewport?.columns ?? WIDE
     const label = editorMode(e.props.hint, vim)
+    // The badge names the command line while it is open, as a vim status line does.
+    const shown = typed === null ? label : 'COMMAND'
     isShell = label.startsWith('SHELL')
+    isWorking = e.props.isWorking
 
     if (e.props.isDraft) {
       watchBox($, vim && !isInserting(label) ? FAST_POLL_MS : POLL_MS)
     }
 
     if (e.surface !== 'terminal' || !overlays(e.surface, e.viewport)) {
-      return StatusRow($.ui.resolve(e), fitLeft({ columns: width, mode: label, model: id, effort: level, title: null }))
+      return StatusRow($.ui.resolve(e), fitLeft({ columns: width, mode: shown, model: id, effort: level, title: null }), fitLine(width, shown, typed, answer))
     }
 
     const [stands, measured, believed, plain] = await Promise.all([read($, box), read($, reading), read($, isLabelBelieved), read($, isBoxPlain)])
@@ -657,7 +963,7 @@ export const register: Register = (on, options) => {
       height: band?.height ?? e.viewport?.rows ?? TALL,
       hint: e.props.hint,
       draft: at,
-      mode: label,
+      mode: shown,
       model: id,
       effort: level,
       box: stands,
@@ -670,6 +976,8 @@ export const register: Register = (on, options) => {
       minRows: plain ? minRows : 1,
       isRelabelled: true,
       isBelieved: believed,
+      command: typed,
+      echo: answer,
     })
 
     marked = block.read

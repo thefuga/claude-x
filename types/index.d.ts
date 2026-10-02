@@ -16,6 +16,13 @@ export type Reading = { columns: number; of: number }
 
 export type Usage = { tokens: number | null; percent: number | null; usd: number | null }
 
+// What the command line said last: a command's answer, or why it would not run.
+export type Echo = { text: string; isWarning: boolean }
+
+// The command line's field: how many were taken down before it, which is what the one drawn now is
+// keyed by, and whether it is left undrawn for the moment.
+export type FieldState = { drawn: number; isDown: boolean }
+
 // These outlive a reload of the mod, so a value whose shape changes takes a new key: `input` was
 // `draft` while it held the cursor alone.
 declare module 'claude-code' {
@@ -35,6 +42,10 @@ declare module 'claude-code' {
       title: string | null
       transcript: string | null
       usage: Usage
+      // What is typed in the command line while it is open, and what it said last.
+      command: string | null
+      echo: Echo | null
+      field: FieldState
     }
   }
 }

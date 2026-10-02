@@ -70,6 +70,9 @@ Segments drop out as the terminal narrows: the provider first, then `Claude`, th
 - `hooks/statusline/`: what is drawn (`view.tsx`, `theme.ts`), how it is worded and fitted
   (`format.ts`), how the prompt box wraps a draft (`wrap.ts`), and the strip that measures the
   footer's first row (`measure.tsx`).
+- `hooks/syntax/`: the colors of a draft: its markdown (`markdown.ts`), the code in its fences
+  (`code.ts`), and the runs the engine paints from them (`paint.ts`).
+- `hooks/commandline/`: the command line's commands and where a draft is kept (`commands.ts`).
 - `themes/`: the theme the mod ships.
 - `types/index.d.ts`: the values the mod keeps in `$.state`. They outlive a reload, so a value whose
   shape changes takes a new key.
@@ -127,6 +130,53 @@ has gone out under the mode the bar read at the time (the one moment the engine 
 `UserPromptSubmit`). A version it once read wrong on stays unnamed, and shows the mark.
 
 None of this is a documented layout. If a Claude Code update moves the prompt, turn the options off.
+
+## The command line
+
+A command line as in vim, in the footer's last row (the `commandLine` option, on by default). Its
+commands, their `!` and their wording are those of [opencode.vim](https://github.com/thefuga/opencode.vim).
+
+Open it with Claude Code's own chord for the area above the prompt, Ctrl+X Tab, from insert or
+normal mode. To open it with Ctrl+X `:` as well, bind that to the same action in
+`~/.claude/keybindings.json`:
+
+```json
+{ "context": "Chat", "bindings": { "ctrl+x :": "abovePrompt:focus" } }
+```
+
+A bare `:` cannot open it. Claude Code's key bindings do not know the vim editor's mode, so the
+binding would take every `:` typed in insert mode as well.
+
+Enter runs the line and Escape leaves it; either way the keys go back to the prompt, in the mode it
+was in. What a command answers stands in the same row for a few seconds.
+
+| Command | What it does |
+| --- | --- |
+| `:w` | Saves the draft. With an empty prompt, clears the saved one. |
+| `:e`, `:e!` | Loads the saved draft back. Refused while the prompt has changes that were not saved; `!` drops them. |
+| `:q`, `:q!` | Quits Claude Code. Refused while the draft has unsaved changes or a turn is running; `!` quits anyway, and ends the turn first. |
+| `:wq`, `:x` | Saves the draft and quits. |
+| `:h` | Lists these in the transcript. |
+| `:<name> [args]` | Runs the slash command `/<name>`, once Claude is idle. |
+
+`:write`, `:edit`, `:quit`, `:qa` and `:help` are the long names.
+
+A draft belongs to its session. It is put back in the prompt when the session is opened again
+(`claude --resume`, `claude -c`, `/resume`), and dropped when a prompt is sent. A session nothing
+was sent in cannot be opened again, so until then its draft is kept for the folder it runs in, and
+the next new session there starts with it. Nothing is saved without `:w`.
+
+The line is typed into a field nobody sees. A mod's field can take the keyboard in one place only,
+the band above the prompt, so the field stands there in a box of no height, and what is typed in
+it is drawn in the footer. That has its limits:
+
+- The cursor is always drawn at the end of the line. The arrow keys move the field's own cursor,
+  unseen.
+- After Escape the line stays for up to a fifth of a second. Claude Code raises nothing when the
+  keys go back to the prompt, so the mod asks ten times a second whether the field still has them.
+- A draft is the prompt's text. A pasted image, or a paste long enough to be folded, comes back as
+  its placeholder.
+- There is no Tab completion, and no command sends the prompt: a mod cannot press Enter.
 
 ## Known issues
 
