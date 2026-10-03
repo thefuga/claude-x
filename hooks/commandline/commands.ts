@@ -10,6 +10,7 @@ export type Action =
   | { kind: 'reload'; isForced: boolean }
   | { kind: 'quit'; isForced: boolean; isSaving: boolean }
   | { kind: 'help' }
+  | { kind: 'expand' }
   // A name that is none of the command line's own: a slash command, if Claude Code has one by it.
   | { kind: 'other'; command: string; args: string }
   | { kind: 'refused'; reason: string }
@@ -30,6 +31,7 @@ const OWN: readonly Entry[] = [
   },
   { names: ['wq', 'x'], action: { kind: 'quit', isForced: false, isSaving: true }, description: 'Save the draft and quit' },
   { names: ['wq!', 'x!'], action: { kind: 'quit', isForced: true, isSaving: true }, description: 'Save the draft and quit, ending a running turn' },
+  { names: ['expand'], action: { kind: 'expand' }, description: 'Make the prompt taller, or back to its height' },
   { names: ['h', 'help'], action: { kind: 'help' }, description: 'List these commands' },
 ]
 
@@ -48,6 +50,7 @@ export const HELP = [
   ':e   :e!     load the saved draft; ! drops what was typed since',
   ':q   :q!     quit Claude Code; ! leaves an unsaved draft or a running turn behind',
   ':wq  :x      save the draft and quit',
+  ':expand      make the prompt taller until the next prompt is sent, or back to its height',
   ':<command>   run a slash command, as /<command> does',
 ]
 
@@ -85,6 +88,9 @@ export const completionsOf = (typed: string, natives: readonly MenuItem[]): Menu
 
   return [...own, ...natives.filter(({ name }) => !taken.has(name))].filter(({ name }) => name.toLowerCase().startsWith(prefix))
 }
+
+// The slash command that does what `:expand` does, for a key to be bound to (`command:expand`).
+export const EXPAND = 'expand'
 
 // The field the line is typed in is drawn under a new key each time the line closes. The engine
 // keeps what was typed in a field by its key, and a line left with Escape would open on it.

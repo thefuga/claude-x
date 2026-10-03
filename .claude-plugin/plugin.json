@@ -21,6 +21,14 @@
       "min": 1,
       "max": 20
     },
+    "expandedLines": {
+      "type": "number",
+      "title": "Rows the prompt stands at while expanded",
+      "description": "In the fullscreen renderer, :expand (or /expand, which a key can be bound to as command:expand) stands the prompt box this many rows tall until the next prompt is sent, or until it is run again. Claude Code lets the box grow to half the screen less five rows, which is as tall as it stands with the default. Never fewer than minLines.",
+      "default": 100,
+      "min": 1,
+      "max": 100
+    },
     "syntax": {
       "type": "boolean",
       "title": "Color the draft's markdown",

@@ -54,6 +54,8 @@ declare module 'claude-code' {
       transcript: string | null
       usage: Usage
       git: Git | null
+      // Whether `:expand` stands the box at its expanded height.
+      isExpanded: boolean
       // What is typed in the command line while it is open, and what it said last.
       command: string | null
       echo: Echo | null

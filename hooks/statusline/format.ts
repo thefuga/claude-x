@@ -637,6 +637,15 @@ const lineNumbers = (laid: readonly Row[] | null, cap: number, facts: Drawn) => 
 // The `minLines` option as a count of rows: a whole number from 1, which asks for nothing.
 export const minRowsOf = (value: unknown) => (typeof value === 'number' && value >= 1 ? Math.floor(value) : 1)
 
+// The `expandedLines` option: the rows the box stands at while expanded, never fewer than it stands
+// at otherwise. The box cannot grow past what the engine lets it (half the screen, less the rows
+// around the box), so a screen too short for them gets as many as fit, and the default is more
+// than any screen fits: as tall as the box can stand.
+export const EXPANDED_LINES = 100
+
+export const expandedRowsOf = (value: unknown, minRows: number) =>
+  Math.max(minRows, typeof value === 'number' && value >= 1 ? Math.floor(value) : EXPANDED_LINES)
+
 // The rows to add under a box that shows fewer than it is to stand. They are the footer's own, so
 // the engine's mark would stand in the first of them: none where the bar does not name the mode in
 // the mark's place, and none where another plugin's row is pinned between the box and the footer.

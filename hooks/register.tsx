@@ -11,7 +11,7 @@ import type {
 } from 'claude-code'
 
 import type { Box, Git, MenuItem, Usage } from '../types'
-import { HELP, NEXT, PREVIOUS, SAID, commandOf, completionsOf, draftKey, fieldKey, isField, keptDraft } from './commandline/commands'
+import { EXPAND, HELP, NEXT, PREVIOUS, SAID, commandOf, completionsOf, draftKey, fieldKey, isField, keptDraft } from './commandline/commands'
 import {
   EDGE,
   EFFORT_ENTRY,
@@ -34,6 +34,7 @@ import {
   isBelieved,
   isInserting,
   minRowsOf,
+  expandedRowsOf,
   pickTitle,
   readingOf,
   sharesMark,
@@ -94,6 +95,7 @@ const echo = atom({ plugin: 'open-claude', key: 'echo' } as const, null)
 const field = atom({ plugin: 'open-claude', key: 'commandField' } as const, FIRST_FIELD)
 const menu = atom({ plugin: 'open-claude', key: 'menu' } as const, null)
 const git = atom({ plugin: 'open-claude', key: 'git' } as const, null)
+const isExpanded = atom({ plugin: 'open-claude', key: 'isExpanded' } as const, false)
 
 let poll: { timer: Timer; ms: number } | undefined
 let settle: Timer | undefined
@@ -712,6 +714,9 @@ const quit = async ($: EngineInterface, isForced: boolean, isSaving: boolean) =>
   await $.command.run({ command: EXIT })
 }
 
+// The box stands at its expanded height, or back at its own, as opencode.vim's compose toggle does.
+const toggleExpanded = ($: EngineInterface) => update($, isExpanded, held => !held)
+
 // Any other name is a slash command's, or one of its aliases, which only running it tells: the
 // engine refuses a name it does not know, and the list it gives has no aliases in it.
 const runCommand = async ($: EngineInterface, name: string, args: string) => {
@@ -737,6 +742,8 @@ const runLine = async ($: EngineInterface, typed: string) => {
     await reloadDraft($, action.isForced)
   } else if (action.kind === 'quit') {
     await quit($, action.isForced, action.isSaving)
+  } else if (action.kind === 'expand') {
+    await toggleExpanded($)
   } else if (action.kind === 'help') {
     // A transcript notice is one line: a line break in it is drawn as a mark.
     HELP.forEach(row => {
@@ -877,6 +884,7 @@ const boot = async ($: EngineInterface) => {
       isStarted = isStarted || turns > 0
     })),
     quietly($, 'command', closeStaleLine($)),
+    quietly($, 'expand', $.command.register({ name: EXPAND, description: 'Make the prompt taller, or back to its height', immediate: true })),
     quietly($, 'git', hasGit ? syncGit($) : update($, git, () => null)),
   ])
 
@@ -913,6 +921,7 @@ const switchSession = async ($: EngineInterface, id: string) => {
 
 export const register: Register = (on, options) => {
   const minRows = minRowsOf(options.minLines)
+  const expandedRows = expandedRowsOf(options.expandedLines, minRows)
   isPainted = options.syntax !== false
   hasGit = options.git !== false
 
@@ -956,6 +965,8 @@ export const register: Register = (on, options) => {
 
     if (e.agent_id === undefined) {
       void quietly($, 'draft', forgetDraft($))
+      // A prompt that was composed tall is sent, and the box goes back to its height.
+      void quietly($, 'expand', update($, isExpanded, () => false))
     }
 
     return next(e)
@@ -1020,6 +1031,13 @@ export const register: Register = (on, options) => {
     })
 
     return answered
+  })
+
+  // `/expand`, which a key can be bound to as `command:expand`.
+  on('command.run', { command: EXPAND }, async $ => {
+    await toggleExpanded($)
+
+    return {}
   })
 
   on('command.run', { command: 'rename' }, async ($, e, next) => {
@@ -1147,7 +1165,7 @@ export const register: Register = (on, options) => {
       return next(e)
     }
 
-    const [vim, id, level, at, spent, typed, answer, offered, repository] = await Promise.all([
+    const [vim, id, level, at, spent, typed, answer, offered, repository, expanded] = await Promise.all([
       read($, isVim),
       read($, model),
       read($, effort),
@@ -1157,6 +1175,7 @@ export const register: Register = (on, options) => {
       read($, echo),
       read($, menu),
       read($, git),
+      read($, isExpanded),
     ])
     const width = e.viewport?.columns ?? WIDE
     const label = editorMode(e.props.hint, vim)
@@ -1190,7 +1209,7 @@ export const register: Register = (on, options) => {
       usage: spent,
       isFilled: false,
       isNumbered: options.lineNumbers !== false && plain,
-      minRows: plain ? minRows : 1,
+      minRows: plain ? (expanded ? expandedRows : minRows) : 1,
       isRelabelled: true,
       isBelieved: believed,
       command: typed,

@@ -62,7 +62,8 @@ describe('commands', () => {
     expect(names('co')).toEqual(['compact', 'config'])
     expect(names('w')).toEqual(['w', 'write', 'wq', 'wq!', 'Wiki'])
     expect(names(':Q')).toEqual(['q', 'quit', 'qa', 'qall', 'q!', 'quit!', 'qa!', 'qall!'])
-    expect(names(''), "the line's twenty names, and Claude Code's but the one they hide").toHaveLength(23)
+    expect(names(''), "the line's twenty-one names, and Claude Code's but the one they hide").toHaveLength(24)
+    expect(names('ex')).toEqual(['expand'])
     expect(completionsOf('w', NATIVES)[0]).toEqual({ name: 'w', description: 'Save the draft for this session' })
   })
 

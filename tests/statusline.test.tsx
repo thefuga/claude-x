@@ -152,6 +152,7 @@ const world = (on: On): World => {
 
     return { value: undefined }
   })
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('command.list', () => ({ value: COMMANDS.map(name => ({ name, description: '', source: 'builtin' as const })) }))
   on('ui.focus', () => (held.hasKeyboard ? {} : { deny: 'that site does not hold the keyboard' }))
   on('prompt.fill', ($, e) => {
@@ -443,6 +444,36 @@ describe('status line', () => {
     expect(await tops('INSERT')).toEqual([0])
   })
 
+  test('stands the box taller while expanded, until a prompt is sent', { options: { minLines: 5, expandedLines: 8 } }, async ($, on) => {
+    const clock = mock.clock(on)
+    world(on)
+    await $.session.start(START)
+    await clock.settle()
+    const left = await $.ui.mount({ ...BLOCK, props: { ...CYCLING, isDraft: true } })
+    const rule = async () =>
+      (await left.findAll({ type: 'Box' })).filter(box => box.props.position === 'absolute' && box.text.includes('─'.repeat(120))).map(box => box.props.top)
+    await left.resize({ columns: STRIP.auto, rows: 0 })
+
+    expect(await rule(), 'four rows added at five lines').toEqual([3])
+
+    await $.command.run({ ...EFFORT, command: 'expand' })
+    await left.redraw({ ...CYCLING, isDraft: true })
+
+    expect(await rule(), 'seven rows added at eight lines').toEqual([6])
+
+    await $.command.run({ ...EFFORT, command: 'expand' })
+    await left.redraw({ ...CYCLING, isDraft: true })
+
+    expect(await rule(), 'run again, back to five').toEqual([3])
+
+    await $.command.run({ ...EFFORT, command: 'expand' })
+    await $.classic.UserPromptSubmit({ prompt: 'hi', permission_mode: 'auto' })
+    await clock.advance(0)
+    await left.redraw({ ...CYCLING, isDraft: true })
+
+    expect(await rule(), 'a prompt sent takes it back to five').toEqual([3])
+  })
+
   test('numbers nothing with the option off', { options: { lineNumbers: false } }, async ($, on) => {
     const clock = mock.clock(on)
     world(on)
@@ -588,7 +619,7 @@ describe('status line', () => {
     await ring('complete:next')
     await ring('complete:next')
 
-    expect(await names(), 'the rows follow the pick').toEqual(['e!', 'edit!', 'effort'])
+    expect(await names(), 'the rows follow the pick').toEqual(['e!', 'edit!', 'expand'])
     expect(await picked()).toBe('edit!')
 
     await ring('complete:previous')

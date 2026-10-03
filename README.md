@@ -164,10 +164,22 @@ leaves the line, menu and all.
 | `:e`, `:e!` | Loads the saved draft back. Refused while the prompt has changes that were not saved; `!` drops them. |
 | `:q`, `:q!` | Quits Claude Code. Refused while the draft has unsaved changes or a turn is running; `!` quits anyway, and ends the turn first. |
 | `:wq`, `:x` | Saves the draft and quits. |
+| `:expand` | Makes the prompt box taller, or puts it back. See below. |
 | `:h` | Lists these in the transcript. |
 | `:<name> [args]` | Runs the slash command `/<name>`, once Claude is idle. |
 
 `:write`, `:edit`, `:quit`, `:qa` and `:help` are the long names.
+
+`:expand` is opencode.vim's compose toggle. It makes the box stand as tall as Claude Code lets it
+until a prompt is sent, which puts it back, or until it is run again. That is half the screen less
+five rows: 15 on a 40-row screen, 45 on a 100-row one. The `expandedLines` option stops it lower
+(never below `minLines`). As with `minLines`, the rows added are drawn by the mod, not
+lines of the draft, and only in the fullscreen renderer. The mod also adds a `/expand` command that
+does the same thing, so a key can be bound to it:
+
+```json
+{ "context": "Chat", "bindings": { "ctrl+x x": "command:expand" } }
+```
 
 A draft belongs to its session. It is put back in the prompt when the session is opened again
 (`claude --resume`, `claude -c`, `/resume`), and dropped when a prompt is sent. A session nothing
