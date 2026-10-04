@@ -1,8 +1,8 @@
 import type { Elements } from 'claude-code'
 
 import type { Menu } from '../../types'
-import { EDGE, GIT_ICON, GUTTER, gitCells } from './format'
-import type { Bar, Block, GitPart, Left, Line, MenuBlock, Right, Segments, TabRow } from './format'
+import { EDGE, GIT_ICON, GUTTER, columnsOf, gitCells } from './format'
+import type { Block, GitPart, Line, MenuBlock, Segments } from './format'
 import { badgeColor, permissionColor, theme } from './theme'
 
 type Table = Pick<Elements['terminal'], 'Box' | 'Text'>
@@ -21,73 +21,43 @@ type Field = {
 
 type Terminal = Pick<Elements['terminal'], 'Box' | 'Text' | 'Client'>
 
-type Fill = { backgroundColor?: string }
-
 // A box over the screen's cells from `column`, `width` of them, `top` rows under the footer's first.
 type Place = (top: number, column: number, width: number) => { position: 'absolute'; top: number; right: number; width: number }
 
-
-// The width the right-hand site is given, so that where it starts is known.
-const SITE = 24
-
 const cells = (count: number) => ' '.repeat(Math.max(0, count))
 
-// The mode, the permission mode, the model and the effort, on the block's fill when they are drawn there.
-const segments = ({ Text }: Table, { mode, permission, model, provider, effort }: Segments, fill: Fill) => [
+// The mode, the permission mode, the model and the effort.
+const segments = ({ Text }: Table, { mode, permission, model, provider, effort }: Segments) => [
   <Text backgroundColor={badgeColor(mode)} color={theme.badge.text} bold>
     {` ${mode} `}
   </Text>,
   permission !== '' && (
-    <Text {...fill} color={permissionColor(permission)} bold>
+    <Text color={permissionColor(permission)} bold>
       {` ${permission}`}
     </Text>
   ),
   permission !== '' && model !== '' && (
-    <Text {...fill} dimColor>
+    <Text dimColor>
       {' ·'}
     </Text>
   ),
-  model !== '' && <Text {...fill}>{` ${model}`}</Text>,
+  model !== '' && <Text>{` ${model}`}</Text>,
   provider !== '' && (
-    <Text {...fill} dimColor>
+    <Text dimColor>
       {` ${provider}`}
     </Text>
   ),
   effort !== '' && (
-    <Text {...fill} dimColor>
+    <Text dimColor>
       {' · '}
     </Text>
   ),
   effort !== '' && (
-    <Text {...fill} color={theme.effort} bold>
+    <Text color={theme.effort} bold>
       {effort}
     </Text>
   ),
 ]
-
-export const SessionTab = ({ Text }: Table, title: string) => (
-  <Text backgroundColor={theme.tab.background} color={theme.tab.text}>
-    {` ≡ ${title} `}
-  </Text>
-)
-
-export const StatusLeft = (table: Table, { title, ...row }: Left) => {
-  const { Box } = table
-
-  return (
-    <Box flexDirection="column">
-      <Box>{segments(table, row, {})}</Box>
-      <Box>{SessionTab(table, title)}</Box>
-    </Box>
-  )
-}
-
-export const StatusRight = ({ Box, Text }: Table, { cursor, usage }: Right) => (
-  <Box flexDirection="column" alignItems="flex-end">
-    <Text dimColor>{cursor}</Text>
-    <Text dimColor>{usage}</Text>
-  </Box>
-)
 
 // The command line or its last answer, and after an open line the cell its cursor stands in.
 const said = ({ Text }: Table, { text, hasCursor, isWarning }: Line) => [
@@ -102,19 +72,19 @@ export const StatusRow = (table: Table, row: Segments, line: Line | null, menu: 
   const picked = menu?.items[menu.picked]
 
   if (line === null) {
-    return <Box>{segments(table, row, {})}</Box>
+    return <Box>{segments(table, row)}</Box>
   }
 
   return (
     <Box>
-      {segments(table, { mode: row.mode, permission: '', model: '', provider: '', effort: '' }, {})}
+      {segments(table, { mode: row.mode, permission: '', model: '', provider: '', effort: '' })}
       {said(table, line)}
       {picked !== undefined && <Text dimColor>{`  ${picked.name}`}</Text>}
     </Box>
   )
 }
 
-// The branch and the counts, before the usage at the end of the footer's last row.
+// The branch and the counts, before the usage in the bar's right half.
 const gitTexts = ({ Text }: Table, { branch, added, deleted }: GitPart, isLast: boolean) => [
   <Text color={theme.git.branch}>{`${GIT_ICON} ${branch}`}</Text>,
   added !== '' && <Text color={theme.git.added}>{` ${added}`}</Text>,
@@ -157,30 +127,13 @@ export const CommandField = ({ Box, Button, Input }: Fields, { key, value, onInp
 
 export const StatusNote = ({ Text }: Table, text: string) => <Text dimColor>{text}</Text>
 
-// The engine draws the band's fold mark, `[-]`, over its last cells.
-const CHROME = 4
-
-// The session's tab and the usage, in the band above the prompt.
-export const StatusTabs = (table: Table, { columns, title, note }: TabRow) => {
-  const { Box, Text } = table
-
-  return (
-    <Box width={columns - CHROME}>
-      {SessionTab(table, title)}
-      <Box flexGrow={1} />
-      <Text dimColor wrap="truncate-start">
-        {note}
-      </Text>
-    </Box>
-  )
-}
-
 // Drawn from the left-hand site, in the footer's first row. The engine keeps its permission mark at
 // the head of that row and lays this tree out after it, so nothing here is placed from the tree's
 // left edge: the tree asks for more than the row, which pins its right edge two cells short of the
-// screen's, and every piece is placed from there. The bar goes over the engine's mark, and a copy
-// of the mark on the row under it with the usage; where the mode is not known for sure the engine's
-// own mark keeps a slot at the head of the bar, and the row under it has the usage alone. The line
+// screen's, and every piece is placed from there. The bar goes over the engine's mark and names the
+// mode in it, with the git state and the usage before the cursor; where the mode is not known for
+// sure the engine's own mark keeps a slot at the head of the bar. A blank row under the bar keeps it
+// off the screen's last row (and covers what of the engine's mark wraps onto it). The line
 // numbers go over the gutter of the prompt box, whose last row stands two rows above the footer's
 // first: the box's rule is between them, and under the rule the rows other plugins pinned.
 //
@@ -188,19 +141,19 @@ export const StatusTabs = (table: Table, { columns, title, note }: TabRow) => {
 // tree takes that many rows ahead of the bar, all but the last blanked too (the engine's mark is
 // in the first, and wraps onto the second), and the last one is drawn as the rule.
 //
-// The footer's last row is the command line's, as the screen's last row is in vim: while it is open
-// or has something to say, that stands where the copy of the mark does.
-export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, mark, label, line, menu, git, usage, numbers, pad, under, isMeasured }: Block) => {
+// While the command line is open or has something to say, it stands in the bar after the badge.
+export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, line, menu, git, usage, numbers, pad, under }: Block) => {
   const { Box, Text, Client } = table
   const at: Place = (top, column, width) => ({ position: 'absolute', top, right: columns - EDGE - column - width, width })
   const start = slot === 0 ? 0 : GUTTER + slot
-  const lead = mark === '' ? '' : ` ${mark}`
-  const taken = line === null ? lead.length : line.text.length + (line.hasCursor ? 2 : 1)
-  const ending = gitCells(git) + (git !== null && usage !== '' ? 2 : 0) + usage.length
+  const taken = line === null ? 0 : line.text.length + (line.hasCursor ? 2 : 1)
+  const right = [git !== null && gitTexts(table, git, usage === ''), usage !== '' && <Text dimColor>{usage}</Text>, (git !== null || usage !== '') && <Text>{'  '}</Text>]
 
   return (
     <Box flexDirection="column" height={pad + 2}>
-      <Box height={0}>{isMeasured && <Client key="measure" module="./measure.tsx" props={{ of: columns }} flexGrow={1} height={0} />}</Box>
+      <Box height={0}>
+        <Client key="measure" module="./measure.tsx" props={{ of: columns }} flexGrow={1} height={0} />
+      </Box>
       <Box width={columns - 2 * EDGE + tuning} height={1} flexShrink={0} />
       {pad > 0 && (
         <Box {...at(-1, 0, columns)}>
@@ -218,23 +171,15 @@ export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, 
         </Box>
       )}
       <Box {...at(pad, start, columns - start)}>
-        {segments(table, bar, {})}
-        <Text>{cells(gap)}</Text>
+        {line === null ? segments(table, bar) : segments(table, { mode: bar.mode, permission: '', model: '', provider: '', effort: '' })}
+        {line !== null && said(table, line)}
+        <Text>{cells(line === null ? gap : gap + columnsOf(bar) - bar.mode.length - 2 - taken)}</Text>
+        {right}
         <Text dimColor>{`${bar.cursor}  `}</Text>
       </Box>
       <Box {...at(pad + 1, 0, columns)}>
-        {line === null ? (
-          <Text color={permissionColor(label)} dimColor={label === 'Manual'}>
-            {lead}
-          </Text>
-        ) : (
-          said(table, line)
-        )}
-        <Text>{cells(columns - taken - ending - 2)}</Text>
-        {git !== null && gitTexts(table, git, usage === '')}
-        <Text dimColor>{`${usage}  `}</Text>
+        <Text>{cells(columns)}</Text>
       </Box>
-      {menu !== null && menuRows(table, menu, at, pad)}
       {numbers?.map(
         (number, index) =>
           number !== null && (
@@ -243,26 +188,7 @@ export const StatusBlock = (table: Terminal, { columns, tuning, bar, slot, gap, 
             </Box>
           ),
       )}
-    </Box>
-  )
-}
-
-// Drawn from the right-hand site, whose place is known from the screen's right edge: the usage in
-// the site itself, and one row up, in place of the rule under the draft, the bar across the screen.
-// The footer's own row, the engine's permission mark and hints in it, is left as the engine draws it.
-export const StatusOver = (table: Table, columns: number, { cursor, gap, ...row }: Bar, usage: string, under: number) => {
-  const { Box, Text } = table
-
-  return (
-    <Box width={SITE} flexShrink={0} justifyContent="flex-end">
-      <Text dimColor wrap="truncate-start">
-        {usage}
-      </Text>
-      <Box position="absolute" top={-1 - under} left={SITE + EDGE - columns} width={columns}>
-        {segments(table, row, {})}
-        <Text>{cells(gap)}</Text>
-        <Text dimColor>{`${cursor}  `}</Text>
-      </Box>
+      {menu !== null && menuRows(table, menu, at, pad - 1)}
     </Box>
   )
 }

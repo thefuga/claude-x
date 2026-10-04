@@ -20,7 +20,6 @@ import {
   MIN_OVERLAID_COLUMNS,
   NO_USAGE,
   ORIGIN,
-  TITLE_ENTRY,
   UNPLACED,
   announcedEfforts,
   boxRowsOf,
@@ -35,7 +34,6 @@ import {
   isInserting,
   minRowsOf,
   expandedRowsOf,
-  pickTitle,
   readingOf,
   sharesMark,
   standsIn,
@@ -54,8 +52,6 @@ const FAST_POLL_MS = 33
 const SETTLE_MS = 150
 const WIDE = 120
 const TALL = 40
-// Past the end of any draft: the engine clamps a decoration to the text.
-const WHOLE_DRAFT = 1_000_000
 // Where the verdicts on the permission label are kept between sessions.
 const VERDICTS = 'label-verdicts'
 // The slash command that quits.
@@ -80,14 +76,12 @@ const input = atom({ plugin: 'open-claude', key: 'input' } as const, ORIGIN)
 const box = atom({ plugin: 'open-claude', key: 'box' } as const, UNPLACED)
 const isBoxPlain = atom({ plugin: 'open-claude', key: 'isBoxPlain' } as const, true)
 const pins = atom({ plugin: 'open-claude', key: 'pins' } as const, [])
-const suggestion = atom({ plugin: 'open-claude', key: 'suggestion' } as const, null)
 const editor = atom({ plugin: 'open-claude', key: 'editor' } as const, 'INSERT')
 const reading = atom({ plugin: 'open-claude', key: 'reading' } as const, null)
 const isLabelBelieved = atom({ plugin: 'open-claude', key: 'isLabelBelieved' } as const, false)
 const model = atom({ plugin: 'open-claude', key: 'model' } as const, '')
 const effort = atom({ plugin: 'open-claude', key: 'effort' } as const, null)
 const isVim = atom({ plugin: 'open-claude', key: 'isVim' } as const, false)
-const title = atom({ plugin: 'open-claude', key: 'title' } as const, null)
 const transcript = atom({ plugin: 'open-claude', key: 'transcript' } as const, null)
 const usage = atom({ plugin: 'open-claude', key: 'usage' } as const, NO_USAGE)
 const command = atom({ plugin: 'open-claude', key: 'command' } as const, null)
@@ -100,12 +94,8 @@ const isExpanded = atom({ plugin: 'open-claude', key: 'isExpanded' } as const, f
 let poll: { timer: Timer; ms: number } | undefined
 let settle: Timer | undefined
 let columns = WIDE
-// Whether the last draw filled the draft's rows: only then is typed text given the fill's color.
-let isFilling = false
 let prompt: PromptBox = { text: '', cursor: 0 }
 let edits = 0
-// The draft the engine was last handed decorations for; it drops them when the draft changes unasked.
-let decorated: string | undefined
 // Whether the box was in shell mode when its hint was last drawn: what is typed there is a command.
 let isShell = false
 // The open command line: the timer that asks after its keyboard, the times in a row it was told no,
@@ -130,8 +120,6 @@ let gitRead: { isAgain: boolean } | undefined
 let band: { maxRows: number; height: number } | undefined
 // The plugins with a status line pinned under the prompt: a row each, between its rule and the footer.
 let pinned = new Set<string>()
-// The screen height and pinned rows at which a draft was last found standing in the engine's rows.
-let placedFor: string | undefined
 // The permission mode the engine's mark was last read as, believed or not.
 let marked: string | null = null
 let engine: string | undefined
@@ -141,7 +129,6 @@ let seenBox: string | undefined
 let isGutterTaken = false
 let hasStatusLine = false
 let seenPlain: boolean | undefined
-let seenSuggestion: string | null | undefined
 let seenEffort: string | null | undefined
 let seenReading: string | undefined
 let seenBelieved: boolean | undefined
@@ -164,13 +151,6 @@ const measured = (context: SessionContextUsage, cost: SessionCost | undefined): 
   usd: cost?.usd ?? null,
 })
 
-const setSuggestion = async ($: EngineInterface, text: string | null) => {
-  if (text !== seenSuggestion) {
-    seenSuggestion = text
-    await update($, suggestion, () => text)
-  }
-}
-
 // Whether the rows laid out here are the rows the engine drew the box in: what is drawn beside the
 // draft's text goes by the first and is only safe while the second agrees. The engine's count and
 // the draft arrive apart, so a difference is only believed once both have settled; and a draft that
@@ -184,7 +164,6 @@ const verify = async ($: EngineInterface, isSettled: boolean) => {
   const rows = boxRowsOf(band.height, band.maxRows, under)
   const laid = layOut(prompt.text, columns - GUTTER - EDGE)
   const isSame = laid !== null && standsIn(band.height, band.maxRows, under, laid.length)
-  const key = `${band.height}:${under}`
 
   if (!isSame && !isSettled) {
     verifySoon($)
@@ -192,13 +171,7 @@ const verify = async ($: EngineInterface, isSettled: boolean) => {
     return
   }
 
-  if (isSame) {
-    placedFor = key
-  } else if (laid !== null) {
-    placedFor = undefined
-  }
-
-  const next: Box = { rows, under, isAligned: isSame, isPlaced: placedFor === key }
+  const next: Box = { rows, under, isAligned: isSame }
   const seen = JSON.stringify(next)
 
   if (seen !== seenBox) {
@@ -222,19 +195,14 @@ const setPrompt = async ($: EngineInterface, next: PromptBox) => {
     poll = undefined
   }
 
-  const isDecorated = next.text !== '' && next.text === decorated
-  const seen = `${isDecorated}:${next.cursor}:${next.text}`
+  const seen = `${next.cursor}:${next.text}`
 
   if (seen === seenPrompt) {
     return
   }
 
   seenPrompt = seen
-  await update($, input, () => draftOf(next.text, next.cursor, isDecorated))
-
-  if (next.text !== '') {
-    await setSuggestion($, null)
-  }
+  await update($, input, () => draftOf(next.text, next.cursor))
 
   verifySoon($)
 }
@@ -246,10 +214,6 @@ const syncBox = async ($: EngineInterface) => {
   // A keystroke landed while the box was being read: what its hook saw is the newer.
   if (before !== edits) {
     return
-  }
-
-  if (now.text !== prompt.text) {
-    decorated = undefined
   }
 
   await setPrompt($, now)
@@ -457,22 +421,6 @@ const findTranscript = async ($: EngineInterface) => {
   return guess
 }
 
-// Claude Code keeps the session's title in its transcript and offers no call for it.
-const syncTitle = async ($: EngineInterface) => {
-  const path = await findTranscript($)
-
-  if (path === null) {
-    return
-  }
-
-  const { stdout } = await $.process.run(['grep', '-a', '-E', TITLE_ENTRY, path])
-  const found = pickTitle(stdout)
-
-  if (found !== null) {
-    await update($, title, () => found)
-  }
-}
-
 const readAnnounced = async ($: EngineInterface) => {
   const path = await findTranscript($)
 
@@ -501,20 +449,14 @@ const adoptAnnounced = async ($: EngineInterface, known: number) => {
   }
 }
 
-const adoptSession = async ($: EngineInterface, path: string, given: string | undefined) => {
+// The session's transcript, which classic hook events name: where `/effort`'s picker leaves its level.
+const adoptSession = async ($: EngineInterface, path: string) => {
   if ((await read($, transcript)) !== path) {
     await update($, transcript, () => path)
-    await update($, title, () => null)
   }
-
-  if (given !== undefined && given !== '') {
-    await update($, title, () => given)
-  }
-
-  await syncTitle($)
 }
 
-// What the command line answers stands in the footer's last row, as vim's messages do, for a while.
+// What the command line answers stands in the bar, as vim's messages do, for a while.
 const say = async ($: EngineInterface, text: string, isWarning = false) => {
   answered?.cancel()
   await update($, echo, () => ({ text, isWarning }))
@@ -878,7 +820,6 @@ const boot = async ($: EngineInterface) => {
     quietly($, 'effort', seedEffort($)),
     quietly($, 'usage', syncUsage($)),
     quietly($, 'cursor', syncBox($)),
-    quietly($, 'title', syncTitle($)),
     // The mod loaded again under a running session: a session that only starts is not counted yet.
     quietly($, 'draft', $.session.turns().then(turns => {
       isStarted = isStarted || turns > 0
@@ -911,11 +852,9 @@ const switchSession = async ($: EngineInterface, id: string) => {
   seenPrompt = undefined
   seenBox = undefined
   seenPlain = undefined
-  seenSuggestion = undefined
   seenEffort = undefined
   seenReading = undefined
   seenBelieved = undefined
-  placedFor = undefined
   await boot($)
 }
 
@@ -926,9 +865,8 @@ export const register: Register = (on, options) => {
   hasGit = options.git !== false
 
   // Only the fullscreen terminal lets a site draw outside itself, and only there is the box laid out
-  // as the overlay expects.
+  // as the block expects.
   const overlays = (surface: RenderSurface, viewport: RenderViewport | undefined) =>
-    options.overlay !== false &&
     surface === 'terminal' &&
     viewport?.isFullscreen === true &&
     viewport.columns >= MIN_OVERLAID_COLUMNS
@@ -942,7 +880,7 @@ export const register: Register = (on, options) => {
 
   on('classic.SessionStart', ($, e, next) => {
     void quietly($, 'session', switchSession($, e.session_id))
-    void quietly($, 'session', adoptSession($, e.transcript_path, e.session_title))
+    void quietly($, 'session', adoptSession($, e.transcript_path))
     void quietly($, 'model', syncModel($))
     void quietly($, 'usage', syncUsage($))
     void quietly($, 'cursor', syncBox($))
@@ -955,9 +893,8 @@ export const register: Register = (on, options) => {
   })
 
   on('classic.UserPromptSubmit', ($, e, next) => {
-    void quietly($, 'session', adoptSession($, e.transcript_path, e.session_title))
+    void quietly($, 'session', adoptSession($, e.transcript_path))
     void quietly($, 'model', syncModel($))
-    void quietly($, 'suggestion', setSuggestion($, null))
 
     if (e.agent_id === undefined && e.permission_mode !== undefined) {
       void quietly($, 'label', judgeLabel($, e.permission_mode))
@@ -997,7 +934,7 @@ export const register: Register = (on, options) => {
   // A model that takes no effort reports none here, which clears the one shown.
   on('classic.Stop', ($, e, next) => {
     void quietly($, 'effort', setEffort($, effortLevel(e.effort?.level)))
-    void quietly($, 'session', adoptSession($, e.transcript_path, undefined))
+    void quietly($, 'session', adoptSession($, e.transcript_path))
 
     return next(e)
   })
@@ -1040,14 +977,6 @@ export const register: Register = (on, options) => {
     return {}
   })
 
-  on('command.run', { command: 'rename' }, async ($, e, next) => {
-    const ran = await next(e)
-    const given = e.args.trim()
-    void quietly($, 'title', given === '' ? syncTitle($) : update($, title, () => given))
-
-    return ran
-  })
-
   on('command.run', { command: 'effort' }, async ($, e, next) => {
     const asked = effortLevel(e.args)
     const known = asked === null ? (await readAnnounced($).catch(() => [])).length : 0
@@ -1057,29 +986,15 @@ export const register: Register = (on, options) => {
     return ran
   })
 
-  // The text the engine offers in an empty box is drawn over with the rest of the row, so it is
-  // drawn again there.
-  on('prompt.suggest', async ($, e, next) => {
-    const shown = await next(e)
-    void quietly($, 'suggestion', setSuggestion($, shown.isShown ? e.text : null))
-
-    return shown
-  })
-
   // Every keystroke passes here with the draft it leaves, and the engine paints the runs answered in
-  // the frame it draws the text: the fill's color where the draft's rows are filled, and the draft's
-  // markdown in its colors. It keeps them until the draft changes with no keystroke (a new line from
+  // the frame it draws the text: the draft's markdown in its colors. It keeps them until the draft changes with no keystroke (a new line from
   // a key bound to one, an edit in the vim editor's normal mode), and nothing here can paint again
   // before the next one: the one call that paints a whole draft also moves the cursor to its end.
   on('prompt.edit', async ($, e, next) => {
     const edited = await next(e)
     edits += 1
-    decorated = isFilling ? edited.text : undefined
     void quietly($, 'cursor', setPrompt($, { text: edited.text, cursor: edited.cursor }))
-    const runs = [
-      ...(isFilling ? [{ start: 0, end: WHOLE_DRAFT, backgroundColor: theme.bar }] : []),
-      ...(options.syntax === false ? [] : paint(edited.text, isShell)),
-    ]
+    const runs = options.syntax === false ? [] : paint(edited.text, isShell)
 
     return runs.length === 0 ? edited : { ...edited, decorations: [...(edited.decorations ?? []), ...runs] }
   })
@@ -1113,6 +1028,7 @@ export const register: Register = (on, options) => {
 
     const table = $.ui.resolve(e)
     const { Box } = table
+
     const { requestId } = e
     const key = fieldKey(drawn)
 
@@ -1189,7 +1105,7 @@ export const register: Register = (on, options) => {
     }
 
     if (e.surface !== 'terminal' || !overlays(e.surface, e.viewport)) {
-      return StatusRow($.ui.resolve(e), fitLeft({ columns: width, mode: shown, model: id, effort: level, title: null }), fitLine(width, shown, typed, answer), offered)
+      return StatusRow($.ui.resolve(e), fitLeft({ columns: width, mode: shown, model: id, effort: level }), fitLine(width, shown, typed, answer), offered)
     }
 
     const [stands, measured, believed, plain] = await Promise.all([read($, box), read($, reading), read($, isLabelBelieved), read($, isBoxPlain)])
@@ -1203,14 +1119,10 @@ export const register: Register = (on, options) => {
       model: id,
       effort: level,
       box: stands,
-      suggestion: null,
       reading: measured,
-      title: null,
       usage: spent,
-      isFilled: false,
       isNumbered: options.lineNumbers !== false && plain,
       minRows: plain ? (expanded ? expandedRows : minRows) : 1,
-      isRelabelled: true,
       isBelieved: believed,
       command: typed,
       echo: answer,

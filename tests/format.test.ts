@@ -5,7 +5,6 @@ import {
   NO_USAGE,
   ORIGIN,
   PERMISSIONS,
-  PLACEHOLDER,
   UNPLACED,
   announcedEfforts,
   boxRowsOf,
@@ -15,7 +14,6 @@ import {
   fitBlock,
   fitLeft,
   fitRight,
-  fitTabRow,
   formatTokens,
   gutterLabel,
   isBelieved,
@@ -28,8 +26,6 @@ import {
   minRowsOf,
   modelName,
   permissionOf,
-  pickTitle,
-  placeholderOf,
   providerName,
   readingOf,
   rowCap,
@@ -43,10 +39,9 @@ import {
 } from '../hooks/statusline/format'
 
 const USAGE = { tokens: 19_700, percent: 2, usd: 0.13 }
-const PLACED = { rows: 2, under: 0, isAligned: true, isPlaced: true }
-const OPEN = { text: null, isDim: false, fillFrom: null, gap: null }
-// Two rows, the cursor at the end of the second, the engine painting the text.
-const DRAFT = draftOf('fix the\nstatus line', 19, true)
+const PLACED = { rows: 2, under: 0, isAligned: true }
+// Two rows, the cursor at the end of the second.
+const DRAFT = draftOf('fix the\nstatus line', 19)
 // At 120 columns the engine leaves the measuring strip 101 cells beside its mark for auto mode.
 const AUTO = { columns: 101, of: 120 }
 const BLOCK = {
@@ -58,21 +53,16 @@ const BLOCK = {
   effort: 'max',
   draft: DRAFT,
   box: PLACED,
-  suggestion: null,
   reading: AUTO,
-  title: 'Update Claude Code mods',
   usage: USAGE,
-  isFilled: true,
   isNumbered: true,
   minRows: 1,
-  isRelabelled: true,
   isBelieved: true,
   command: null,
   echo: null,
   menu: null,
   git: null,
 }
-const rowsOf = (block: Parameters<typeof fitBlock>[0]) => fitBlock(block).rows ?? []
 
 describe('format', () => {
   test('names a model from its id', () => {
@@ -123,9 +113,9 @@ describe('format', () => {
   })
 
   test('keeps the draft with its cursor, unless it is too long to lay out', () => {
-    expect(draftOf('', 0, false)).toEqual(ORIGIN)
-    expect(DRAFT).toEqual({ line: 2, column: 12, percent: 100, text: 'fix the\nstatus line', offset: 19, isDecorated: true })
-    expect(draftOf('x'.repeat(9000), 9000, true)).toMatchObject({ column: 9001, text: null })
+    expect(draftOf('', 0)).toEqual(ORIGIN)
+    expect(DRAFT).toEqual({ line: 2, column: 12, percent: 100, text: 'fix the\nstatus line', offset: 19 })
+    expect(draftOf('x'.repeat(9000), 9000)).toMatchObject({ column: 9001, text: null })
   })
 
   test('reads the rows of the box off the room the band above it is left', () => {
@@ -162,17 +152,6 @@ describe('format', () => {
     expect(['INSERT', 'SHELL', 'NORMAL', 'SHELL NORMAL', 'VISUAL LINE'].map(isInserting)).toEqual([true, true, false, false, false])
   })
 
-  test('picks the session title: the given name over the generated one, the last of each', () => {
-    const generated = '{"type":"ai-title","aiTitle":"First guess","sessionId":"s"}'
-    const regenerated = '{"type":"ai-title","aiTitle":"Update Claude Code mods","sessionId":"s"}'
-    const given = '{"type":"custom-title","customTitle":"Status line","sessionId":"s"}'
-
-    expect(pickTitle('')).toBe(null)
-    expect(pickTitle('not json\n')).toBe(null)
-    expect(pickTitle([generated, regenerated, ''].join('\n'))).toBe('Update Claude Code mods')
-    expect(pickTitle([generated, given, regenerated].join('\n'))).toBe('Status line')
-  })
-
   test('truncates on a glyph and marks the cut', () => {
     expect(truncate('Update Claude Code mods', 24)).toBe('Update Claude Code mods')
     expect(truncate('Update Claude Code mods', 17)).toBe('Update Claude Co…')
@@ -186,24 +165,23 @@ describe('format', () => {
   })
 
   test('drops what does not fit, the provider first', () => {
-    const facts = { mode: 'NORMAL', model: 'claude-opus-5-5[1m]', effort: 'max', title: 'Update Claude Code mods' }
+    const facts = { mode: 'NORMAL', model: 'claude-opus-5-5[1m]', effort: 'max' }
     const wide = { mode: 'NORMAL', permission: '', model: 'Claude Opus 5.5', provider: 'Anthropic', effort: 'max' }
 
-    expect(fitLeft({ ...facts, columns: 170 })).toEqual({ ...wide, title: 'Update Claude Code mods' })
-    expect(fitLeft({ ...facts, columns: 84 })).toEqual({ ...wide, provider: '', title: 'Update Claude Code mods' })
+    expect(fitLeft({ ...facts, columns: 170 })).toEqual(wide)
+    expect(fitLeft({ ...facts, columns: 84 })).toEqual({ ...wide, provider: '' })
     expect(fitLeft({ ...facts, columns: 66 })).toMatchObject({ model: 'Opus 5.5', provider: '', effort: 'max' })
-    expect(fitLeft({ ...facts, columns: 48 })).toMatchObject({ model: 'Opus 5.5', effort: '', title: 'Update Claude…' })
-    expect(fitLeft({ ...facts, columns: 36 })).toMatchObject({ model: '', effort: '', title: 'Update…' })
+    expect(fitLeft({ ...facts, columns: 48 })).toMatchObject({ model: 'Opus 5.5', effort: '' })
+    expect(fitLeft({ ...facts, columns: 36 })).toMatchObject({ model: '', effort: '' })
   })
 
-  test('shows no model, effort or title it does not know', () => {
-    expect(fitLeft({ columns: 170, mode: 'INSERT', model: '', effort: null, title: null })).toEqual({
+  test('shows no model or effort it does not know', () => {
+    expect(fitLeft({ columns: 170, mode: 'INSERT', model: '', effort: null })).toEqual({
       mode: 'INSERT',
       permission: '',
       model: '',
       provider: '',
       effort: '',
-      title: 'New session',
     })
   })
 
@@ -263,22 +241,25 @@ describe('format', () => {
     expect([sharesMark('auto', 'dontAsk'), sharesMark('auto', 'plan')]).toEqual([true, false])
   })
 
-  test('fits the bar to the whole width, with a copy of the mark the strip measured for the row under it', () => {
+  test('fits the bar to the whole width, naming the mode the strip measured, with the usage before the cursor', () => {
     expect(fitBlock({ ...BLOCK, mode: 'NORMAL' })).toMatchObject({
       columns: 120,
       tuning: 4,
-      bar: { mode: 'NORMAL', permission: '', model: 'Claude Opus 5.5', provider: 'Anthropic', effort: 'max', cursor: 'Ln 2, Col 12 · 100%' },
+      bar: { mode: 'NORMAL', permission: 'Auto', model: 'Claude Opus 5.5', provider: 'Anthropic', effort: 'max', cursor: 'Ln 2, Col 12 · 100%' },
       slot: 0,
-      mark: '⏵⏵ auto mode on',
-      label: 'Auto',
       usage: '19.7K (2%) · $0.13',
-      isMeasured: true,
+      gap: 32,
       read: 'auto',
     })
+    expect(fitBlock({ ...BLOCK, git: { branch: 'main', additions: 94, deletions: 64 } })).toMatchObject({
+      git: { branch: 'main', added: '+94', deleted: '-64' },
+      usage: '19.7K (2%) · $0.13',
+    })
+    expect(fitBlock({ ...BLOCK, columns: 64, reading: null }).usage, 'no room beside the slot').toBe('')
   })
 
   test("leaves the engine's own mark a slot where the mode is not known for sure", () => {
-    const slotted = { mark: '', slot: MARK_SLOT }
+    const slotted = { slot: MARK_SLOT, bar: { permission: '' } }
 
     expect(fitBlock({ ...BLOCK, reading: null })).toMatchObject({ ...slotted, read: null })
     expect(fitBlock({ ...BLOCK, reading: { columns: 90, of: 120 } }), 'a mark of no mode known').toMatchObject(slotted)
@@ -290,76 +271,16 @@ describe('format', () => {
     expect(fitBlock({ ...BLOCK, reading: { columns: 100, of: 120 }, hint: '(shift+tab to cycle)' }), 'a key no manual mode names').toMatchObject(
       slotted,
     )
-    expect(fitBlock({ ...BLOCK, reading: { columns: 100, of: 120 }, hint: '? for shortcuts' }).mark).toBe('⏸ manual mode on')
+    expect(fitBlock({ ...BLOCK, reading: { columns: 100, of: 120 }, hint: '? for shortcuts' }).bar.permission).toBe('Manual')
   })
 
-  test('fills each row of the draft from the end of its text, leaving the cursor its cell', () => {
-    expect(rowsOf(BLOCK)).toEqual([
-      { text: null, isDim: false, fillFrom: 7, gap: null },
-      { text: null, isDim: false, fillFrom: 11, gap: 11 },
-    ])
-    expect(rowsOf({ ...BLOCK, draft: draftOf('fix the   ', 10, true), box: { ...PLACED, rows: 1 } })).toEqual([
-      { text: null, isDim: false, fillFrom: 7, gap: 10 },
-    ])
-  })
-
-  test('draws the text itself where the engine no longer colors it', () => {
-    const plain = { ...DRAFT, isDecorated: false }
-
-    expect(rowsOf({ ...BLOCK, draft: plain }).map(row => row.text)).toEqual(['fix the', 'status line'])
-    expect(rowsOf({ ...BLOCK, mode: 'NORMAL', draft: { ...DRAFT, offset: 8 } })[1]).toEqual({
-      text: 'status line',
-      isDim: false,
-      fillFrom: 11,
-      gap: null,
-    })
-    expect(rowsOf({ ...BLOCK, mode: 'SHELL NORMAL' }).map(row => row.text)).toEqual(['fix the', 'status line'])
-    expect(rowsOf({ ...BLOCK, mode: 'VISUAL', draft: plain }).map(row => row.text)).toEqual([null, null])
-    expect(rowsOf({ ...BLOCK, mode: 'SHELL VISUAL', draft: plain }).map(row => row.text)).toEqual([null, null])
-  })
-
-  test('draws the empty box whole, with what the engine offers in it', () => {
-    const empty = { ...BLOCK, draft: ORIGIN, box: { ...PLACED, rows: 1 } }
-
-    expect(rowsOf(empty)).toEqual([{ text: PLACEHOLDER, isDim: true, fillFrom: PLACEHOLDER.length, gap: null }])
-    expect(rowsOf({ ...empty, suggestion: 'run the tests' })[0]).toMatchObject({ text: 'run the tests', fillFrom: 13 })
-    expect(rowsOf({ ...empty, suggestion: 'run the tests 🙂' })[0]?.text, 'cells that cannot be counted').toBe(PLACEHOLDER)
-    expect(rowsOf({ ...empty, columns: 64, reading: null })[0]?.text).toBe(truncate(PLACEHOLDER, 60))
-    expect(rowsOf({ ...empty, mode: 'NORMAL' })[0]?.text, 'the keys of the mode it is in').toBe('Ask anything…  (i insert)')
-    expect(rowsOf({ ...empty, mode: 'SHELL', suggestion: 'run the tests' })[0]?.text).toBe(
-      'Run a shell command…  (backspace leaves shell mode)',
-    )
-    expect(placeholderOf('SHELL NORMAL')).toBe('Run a shell command…  (i insert)')
-    expect(PLACEHOLDER).toBe('Ask anything…  (? shortcuts · / commands · @ files)')
-  })
-
-  test('fills nothing it is not sure of', () => {
-    const tall = draftOf(Array.from({ length: 20 }, (_, index) => `line ${index}`).join('\n'), 0, true)
-    const odd = draftOf('ok 🙂\nyes', 0, true)
-
-    expect(rowsOf({ ...BLOCK, box: { ...PLACED, isAligned: false } }), 'rows the engine does not agree on').toEqual([OPEN, OPEN])
-    expect(rowsOf({ ...BLOCK, draft: odd, box: { ...PLACED, isAligned: false } }), 'an emoji').toEqual([OPEN, OPEN])
-    expect(rowsOf({ ...BLOCK, height: 30, draft: tall, box: { ...PLACED, rows: 10 } }), 'a scrolled box').toEqual(
-      Array.from({ length: 10 }, () => OPEN),
-    )
-    expect(rowsOf({ ...BLOCK, isFilled: false }), 'the option off').toEqual([OPEN, OPEN])
-  })
-
-  test('counts the rows the engine draws when it counts more, and stands above rows pinned under the box', () => {
-    expect(rowsOf({ ...BLOCK, box: { ...PLACED, rows: 3, isAligned: false } })).toHaveLength(3)
+  test('stands above rows pinned under the box', () => {
     expect(fitBlock({ ...BLOCK, box: { ...PLACED, under: 2 } }).under).toBe(2)
-  })
-
-  test('leaves the prompt box alone where the rows around it are not the known ones', () => {
-    const unplaced = fitBlock({ ...BLOCK, box: { ...PLACED, isPlaced: false } })
-
-    expect(unplaced.rows).toBe(null)
-    expect(unplaced.bar).toMatchObject({ mode: 'INSERT', cursor: 'Ln 2, Col 12 · 100%' })
   })
 
   test("numbers each row of the box that starts a line, the cursor's line apart", () => {
     // At 64 columns a row of the box takes 60 cells: the first line here takes two rows.
-    const wrapped = draftOf(`${'word '.repeat(13)}\nnext`, 0, false)
+    const wrapped = draftOf(`${'word '.repeat(13)}\nnext`, 0)
 
     expect(fitBlock(BLOCK).numbers).toEqual([
       { label: '1 ', isCurrent: false },
@@ -382,7 +303,7 @@ describe('format', () => {
   test('numbers the rows a box too short for its draft shows', () => {
     const lines = Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join('\n')
     const labels = (offset: number) =>
-      fitBlock({ ...BLOCK, height: 30, draft: draftOf(lines, offset, false) }).numbers?.map(number => number?.label)
+      fitBlock({ ...BLOCK, height: 30, draft: draftOf(lines, offset) }).numbers?.map(number => number?.label)
 
     expect(labels(0)).toEqual(['1 ', '2 ', '3 ', '4 ', '5 ', '6 ', '7 ', '8 ', '9 ', '10'])
     expect(labels(lines.indexOf('line 10'))).toEqual(['5 ', '6 ', '7 ', '8 ', '9 ', '10', '11', '12', '13', '14'])
@@ -394,15 +315,15 @@ describe('format', () => {
     const counted = (rows: number) => fitBlock({ ...BLOCK, box: { ...PLACED, rows, isAligned: false } }).numbers
 
     expect(fitBlock({ ...BLOCK, isNumbered: false }).numbers, 'the option off, or a box that does not stand plain').toBe(null)
-    expect(fitBlock({ ...BLOCK, draft: draftOf('ok 🙂\nyes', 0, false) }).numbers, 'an emoji').toBe(null)
-    expect(fitBlock({ ...BLOCK, draft: draftOf('x'.repeat(9000), 0, false) }).numbers, 'a draft too long to lay out').toBe(null)
+    expect(fitBlock({ ...BLOCK, draft: draftOf('ok 🙂\nyes', 0) }).numbers, 'an emoji').toBe(null)
+    expect(fitBlock({ ...BLOCK, draft: draftOf('x'.repeat(9000), 0) }).numbers, 'a draft too long to lay out').toBe(null)
     expect(counted(1), 'the engine has room for fewer rows than were laid out').toBe(null)
     expect(counted(5), 'room taken by what else stands under the prompt').toHaveLength(2)
   })
 
   // At 40 rows of screen the box shows fifteen rows at most; at 16, three.
   test('pads a box that is to stand taller than its draft', () => {
-    const tall = draftOf(Array.from({ length: 6 }, (_, index) => `line ${index + 1}`).join('\n'), 0, false)
+    const tall = draftOf(Array.from({ length: 6 }, (_, index) => `line ${index + 1}`).join('\n'), 0)
     const padded = { ...BLOCK, minRows: 5 }
 
     expect(fitBlock(BLOCK).pad, 'nothing asked for').toBe(0)
@@ -412,22 +333,8 @@ describe('format', () => {
     expect(fitBlock({ ...padded, height: 16 }).pad, 'no taller than the box may grow').toBe(1)
     expect(fitBlock({ ...padded, reading: null }).pad, "the engine's mark would stand in the rows added").toBe(0)
     expect(fitBlock({ ...padded, box: { ...PLACED, under: 1 } }).pad, "another plugin's row under the box").toBe(0)
-    expect(fitBlock({ ...padded, draft: draftOf('ok 🙂', 0, false) }).pad, 'rows that cannot be counted').toBe(0)
+    expect(fitBlock({ ...padded, draft: draftOf('ok 🙂', 0) }).pad, 'rows that cannot be counted').toBe(0)
     expect([5, 5.8, 0, -3, '5', undefined].map(minRowsOf)).toEqual([5, 5, 1, 1, 1, 1])
-  })
-
-  test('fits the tab row: the tab at one end, the usage at the other', () => {
-    expect(fitTabRow(120, 'Update Claude Code mods', [], USAGE)).toEqual({
-      columns: 120,
-      title: 'Update Claude Code mods',
-      note: '19.7K (2%) · $0.13',
-    })
-    expect(fitTabRow(120, null, ['focus', 'memory paused'], USAGE)).toMatchObject({
-      title: 'New session',
-      note: 'focus & memory paused · 19.7K (2%) · $0.13',
-    })
-    expect(fitTabRow(100, null, ['focus'], NO_USAGE).note).toBe('0 (0%)')
-    expect(fitTabRow(64, 'A session with quite a long title to it', [], USAGE).title).toBe('A session with quite a…')
   })
 
   test("words the footer's last row for the command line: what is typed after a colon, or the last answer", () => {
@@ -492,9 +399,9 @@ describe('format', () => {
     expect(gitCells({ branch: 'main', added: '+94', deleted: '-64' }), '').toBe(' main +94 -64'.length + 1)
   })
 
-  test('gives the command line the row under the bar, up to the usage', () => {
+  test('gives the command line the bar after the badge, up to the usage', () => {
     expect(fitBlock(BLOCK).line).toBe(null)
     expect(fitBlock({ ...BLOCK, command: 'wq' }).line).toEqual({ text: ':wq', hasCursor: true, isWarning: false })
-    expect(fitBlock({ ...BLOCK, columns: 64, command: 'x'.repeat(80) }).line?.text).toHaveLength(64 - '19.7K (2%)'.length - 5)
+    expect(fitBlock({ ...BLOCK, columns: 64, command: 'x'.repeat(80) }).line?.text).toHaveLength(9)
   })
 })

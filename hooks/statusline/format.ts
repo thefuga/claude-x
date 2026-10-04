@@ -1,28 +1,21 @@
 import type { Box, Cursor, Draft, Echo, FieldState, Git, Menu, Reading, Usage } from '../../types'
-import { MAX_LENGTH, cursorIn, isPlain, layOut } from './wrap'
+import { MAX_LENGTH, cursorIn, layOut } from './wrap'
 import type { Row } from './wrap'
 
 // The editor's mode, the permission mode where the bar names it (`''` where it does not), the model
 // and the effort.
 export type Segments = { mode: string; permission: string; model: string; provider: string; effort: string }
 
-export type Left = Segments & { title: string }
-
 export type Right = { cursor: string; usage: string; git: string }
 
-// The git part of the footer's last row as drawn: the branch after its icon, and each count that is
+// The git part of the bar as drawn: the branch after its icon, and each count that is
 // not zero.
 export type GitPart = { branch: string; added: string; deleted: string }
-
-// One row of the draft as it is drawn over: `text` when the row's text is drawn too (the engine's
-// own shows through otherwise), the cell the fill starts at, and one cell of it left open for the
-// character typed next. A row with no `fillFrom` gets its gutter and nothing else.
-export type BlockRow = { text: string | null; isDim: boolean; fillFrom: number | null; gap: number | null }
 
 // A number drawn over the box's gutter: the line's, and whether the cursor is on that line.
 export type LineNumber = { label: string; isCurrent: boolean }
 
-// What the footer's last row says in place of the permission mark: the command line while it is
+// What the bar says after its badge in place of the rest of its left half: the command line while it is
 // open, with a cell after it for its cursor, or what the last command answered.
 export type Line = { text: string; hasCursor: boolean; isWarning: boolean }
 
@@ -32,28 +25,26 @@ export type MenuRow = { name: string; description: string; isPicked: boolean }
 
 export type MenuBlock = { rows: MenuRow[]; nameWidth: number; width: number }
 
-// What the left-hand site draws in the fullscreen terminal: the status bar on the footer's first row,
-// and over the prompt box above it the draft's rows and a row of fill on each of its rules. `rows` is
-// null where the box is left as the engine draws it; `under` is the rows other plugins pinned between
-// the box and the footer. `slot` is the cells kept clear at the head of the bar for the engine's own
-// permission mark, where the bar does not name the mode itself, and `read` the mode the mark's width
-// says it is, believed or not.
+
+// What the left-hand site draws in the fullscreen terminal: the status bar on the footer's first row
+// and a blank row under it, the line numbers over the prompt box's gutter, and the rows added under a
+// box shorter than it is to stand. `under` is the rows other plugins pinned between the box and the
+// footer. `slot` is the cells kept clear at the head of the bar for the engine's own permission mark,
+// where the bar does not name the mode itself, and `read` the mode the mark's width says it is,
+// believed or not.
 export type Block = {
   columns: number
   tuning: number
   bar: Segments & { cursor: string }
   slot: number
-  // The session's tab, drawn on the notice row over the prompt box where the box's rows are known.
-  // The mod's own copy of the engine's mark, drawn under the bar where the mode is known, and the usage.
-  mark: string
-  label: string
+  // The command line, which stands after the badge in place of the rest of the bar's left half.
   line: Line | null
   menu: MenuBlock | null
+  // The git state and the usage, at the head of the bar's right half, before the cursor.
   git: GitPart | null
   usage: string
   // The blank cells between the bar's two halves, drawn so that they cover the engine's mark.
   gap: number
-  rows: readonly BlockRow[] | null
   // The line numbers drawn over the box's gutter, one entry for each row the box shows, from the
   // top: null on a row that carries a line on, and null in all where the gutter is left as the
   // engine draws it.
@@ -62,13 +53,8 @@ export type Block = {
   // rule blanked, blank rows of the footer's under it, and a rule on the last of them.
   pad: number
   under: number
-  isFilled: boolean
-  isMeasured: boolean
   read: string | null
 }
-
-// The row under the block: the session's tab, and at its far end the engine's own labels and the usage.
-export type TabRow = { columns: number; title: string; note: string }
 
 // One permission mode as Claude Code marks it at the head of the footer: a symbol, the mode's name and
 // ` on`, this many cells in all.
@@ -80,31 +66,13 @@ type Facts = { columns: number; mode: string; model: string; effort: string | nu
 
 type Named = Omit<Facts, 'columns'> & { permission: string }
 
-export const ORIGIN: Draft = { line: 1, column: 1, percent: 100, text: '', offset: 0, isDecorated: false }
+export const ORIGIN: Draft = { line: 1, column: 1, percent: 100, text: '', offset: 0 }
 
-export const UNPLACED: Box = { rows: null, under: 0, isAligned: false, isPlaced: false }
+export const UNPLACED: Box = { rows: null, under: 0, isAligned: false }
 
 export const FIRST_FIELD: FieldState = { drawn: 0, isDown: false, value: '' }
 
-// What the empty box says: what it takes, and the keys that work in the editor's mode at the time.
-export const placeholderOf = (mode: string) => {
-  const ask = mode.startsWith('SHELL') ? 'Run a shell command…' : 'Ask anything…'
-
-  if (mode.endsWith('NORMAL')) {
-    return `${ask}  (i insert)`
-  }
-
-  return mode === 'SHELL' ? `${ask}  (backspace leaves shell mode)` : `${ask}  (? shortcuts · / commands · @ files)`
-}
-
-export const PLACEHOLDER = placeholderOf('INSERT')
-
 export const NO_USAGE: Usage = { tokens: null, percent: null, usd: null }
-
-export const UNTITLED = 'New session'
-
-// A transcript's title rows, as `grep -E` finds them.
-export const TITLE_ENTRY = '^\\{"type":"(custom-title|ai-title)"'
 
 // Where `/effort` announced the level it set, as `grep -o -E` cuts it out of a transcript's rows.
 export const EFFORT_ENTRY = '"content":"<local-command-stdout>Set effort level to [a-z]+'
@@ -136,7 +104,6 @@ export const VERIFIED = ['2.1.287']
 // The footer row is shared with the engine's own mode pill on the left.
 const PILL_COLUMNS = 24
 const RIGHT_COLUMNS: Record<Size, number> = { full: 22, compact: 14, tiny: 6 }
-const MAX_TITLE = 24
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 
@@ -229,9 +196,7 @@ const FOOTER_ROWS = 2
 // the footer.
 const AROUND = 3 + FOOTER_ROWS
 
-// The box grows with the draft until it stands five rows short of half the screen, then scrolls. The
-// engine counts on a footer of one row there, so at its tallest the box pushes the tab row off the
-// screen.
+// The box grows with the draft until it stands five rows short of half the screen, then scrolls.
 export const rowCap = (height: number, under: number) => Math.max(3, Math.floor(height / 2) - 5 - under)
 
 // The band above the prompt is told the rows it may take: what the prompt leaves of half the screen.
@@ -264,11 +229,10 @@ export const locate = (text: string, offset: number): Cursor => {
 }
 
 // A draft too long to lay out keeps its cursor and drops its text.
-export const draftOf = (text: string, offset: number, isDecorated: boolean): Draft => ({
+export const draftOf = (text: string, offset: number): Draft => ({
   ...locate(text, offset),
   text: text.length > MAX_LENGTH ? null : text,
   offset,
-  isDecorated,
 })
 
 // The hint leads with the vim editor's marker (`-- INSERT --`, `-- VISUAL --`, nothing in normal mode),
@@ -287,36 +251,6 @@ export const editorMode = (hint: string, isVim: boolean) => {
 
 // Whether keys go into the draft as text, each of them an edit the engine raises.
 export const isInserting = (mode: string) => mode === 'INSERT' || mode === 'SHELL'
-
-const parse = (line: string): Record<string, unknown> | undefined => {
-  try {
-    const entry: unknown = JSON.parse(line)
-
-    return typeof entry === 'object' && entry !== null ? { ...entry } : undefined
-  } catch {
-    return undefined
-  }
-}
-
-// A name the person gave the session wins over the one Claude Code generated; of each, the last row.
-export const pickTitle = (entries: string) => {
-  let given = ''
-  let generated = ''
-
-  for (const line of entries.split('\n')) {
-    const entry = parse(line)
-
-    if (entry?.type === 'custom-title' && typeof entry.customTitle === 'string') {
-      given = entry.customTitle
-    }
-
-    if (entry?.type === 'ai-title' && typeof entry.aiTitle === 'string') {
-      generated = entry.aiTitle
-    }
-  }
-
-  return given || generated || null
-}
 
 export const truncate = (text: string, max: number) => {
   const glyphs = [...text]
@@ -345,7 +279,8 @@ export const lineOf = (command: string | null, echo: Echo | null, room: number):
 export const transcriptPath = (configDirectory: string, root: string, sessionId: string) =>
   `${configDirectory}/projects/${root.replace(/[^a-zA-Z0-9]/g, '-')}/${sessionId}.jsonl`
 
-const columnsOf = ({ mode, permission, model, provider, effort }: Segments) =>
+// The cells the bar's left half takes: the badge and a cell either side of it, then each segment.
+export const columnsOf = ({ mode, permission, model, provider, effort }: Segments) =>
   mode.length +
   2 +
   (permission === '' ? 0 : permission.length + (model === '' ? 1 : 3)) +
@@ -369,14 +304,8 @@ const richest = (room: number, { mode, permission, model, effort }: Named): Segm
   return rows.find(row => columnsOf(row) <= room) ?? { mode, permission, model: '', provider: '', effort: '' }
 }
 
-const fitTitle = (room: number, title: string | null, min = 8) =>
-  truncate(title ?? UNTITLED, clamp(room - 4, min, MAX_TITLE))
-
-export const fitLeft = ({ title, ...facts }: Facts & { title: string | null }): Left => {
-  const room = facts.columns - PILL_COLUMNS - RIGHT_COLUMNS[sizeOf(facts.columns)]
-
-  return { ...richest(room, { ...facts, permission: '' }), title: fitTitle(room, title) }
-}
+export const fitLeft = (facts: Facts): Segments =>
+  richest(facts.columns - PILL_COLUMNS - RIGHT_COLUMNS[sizeOf(facts.columns)], { ...facts, permission: '' })
 
 // opencode.vim's icon for the branch, Nerd Font's `nf-oct-git_branch`, and how long a branch's
 // name is let stand: cut to fit, but not below the shorter.
@@ -392,7 +321,7 @@ export const gitCells = (part: GitPart | null) =>
 // opencode.vim lets go first: the usage, then the counts, then the branch's length.
 export const fitGit = (room: number, git: Git | null, usage: string): { git: GitPart | null; usage: string } => {
   if (git === null) {
-    return { git: null, usage }
+    return { git: null, usage: usage.length <= room ? usage : '' }
   }
 
   const branch = truncate(git.branch, MAX_BRANCH)
@@ -457,15 +386,6 @@ export const fitRight = (columns: number, modes: readonly string[], cursor: Curs
     usage: usageText(usage, sizeOf(columns)),
     git: part === null ? '' : [`${GIT_ICON} ${part.branch}`, part.added, part.deleted].filter(text => text !== '').join(' '),
   }
-}
-
-// The tab row: the engine's own labels (`focus`, `memory paused`) keep their place where there is
-// room, and the tab is never cut shorter than `New session`.
-export const fitTabRow = (columns: number, title: string | null, modes: readonly string[], usage: Usage): TabRow => {
-  const spent = usageText(usage, 'full')
-  const note = columns >= 110 && modes.length > 0 ? `${modes.join(' & ')} · ${spent}` : spent
-
-  return { columns, title: fitTitle(columns - 2 * EDGE - note.length - 2, title, UNTITLED.length + 1), note }
 }
 
 const roundHalfUp = (value: number) => Math.floor(value + 0.5)
@@ -548,58 +468,16 @@ type Drawn = Facts & {
   hint: string
   draft: Draft
   box: Box
-  suggestion: string | null
   reading: Reading | null
-  title: string | null
   usage: Usage
-  isFilled: boolean
   isNumbered: boolean
   // The rows the box is to stand at the least; 1 leaves it as the engine sizes it.
   minRows: number
-  isRelabelled: boolean
   isBelieved: boolean
   command: string | null
   echo: Echo | null
   menu: Menu | null
   git: Git | null
-}
-
-const OPEN: BlockRow = { text: null, isDim: false, fillFrom: null, gap: null }
-
-// The engine paints typed text on the fill itself, until the draft changes with no keystroke; and in
-// the vim editor's normal mode every change is one. There the text is drawn over, except while a
-// selection is up, which only the engine can draw.
-const isRedrawn = (mode: string, draft: Draft) => !mode.includes('VISUAL') && (mode.endsWith('NORMAL') || !draft.isDecorated)
-
-// A prompt the engine offers stands in the box where one can be taken (anywhere but in shell mode),
-// if it is text this file can count the cells of.
-const emptyText = (mode: string, suggestion: string | null) =>
-  mode.startsWith('SHELL') || suggestion === null || !isPlain(suggestion) ? placeholderOf(mode) : suggestion
-
-const blockRows = (count: number, laid: readonly Row[] | null, room: number, facts: Drawn): BlockRow[] => {
-  const { draft, mode, box, suggestion, isFilled } = facts
-  const open = Array.from({ length: count }, () => OPEN)
-
-  // Nothing is drawn beside the draft's text unless its rows here are the rows the engine drew.
-  if (!isFilled || !box.isAligned || laid === null || laid.length !== count) {
-    return open
-  }
-
-  // The engine's own placeholder is not the draft, so the empty box's one row is drawn whole.
-  if (draft.text === '') {
-    const text = truncate(emptyText(mode, suggestion), room)
-
-    return [{ text, isDim: true, fillFrom: text.length, gap: null }]
-  }
-
-  const at = cursorIn(laid, draft.offset)
-
-  return laid.map((row, index) => {
-    const shown = row.text.trimEnd()
-    const gap = at.row === index && at.column >= shown.length ? at.column : null
-
-    return { text: isRedrawn(mode, draft) ? shown : null, isDim: false, fillFrom: shown.length, gap }
-  })
 }
 
 // The gutter is two cells: a number under 10 keeps one clear of the text, one under 100 fills both,
@@ -653,61 +531,43 @@ const padRows = (shown: number | null, cap: number, slot: number, { box, minRows
   shown === null || slot !== 0 || box.under > 0 ? 0 : Math.max(0, Math.min(minRows, cap) - shown)
 
 export const fitBlock = (facts: Drawn): Block => {
-  const { columns, height, draft, box, isFilled, isRelabelled } = facts
-  const found = isRelabelled ? permissionOf(columns, facts.reading) : null
+  const { columns, height, draft, box } = facts
+  const found = permissionOf(columns, facts.reading)
   // The bar names the mode in the mark's place only where the reading is believed, and nothing the
   // engine itself says of the mode stands against it.
   const named = found !== null && facts.isBelieved && !contradicts(facts.hint, found) ? found : null
   const slot = named === null ? MARK_SLOT : 0
-  const at = cursorText(draft, sizeOf(columns))
-  const cursor = at
-  // The accent and a space lead the bar, two spaces end it, and two keep its halves apart.
-  const bar = { ...richest(columns - cursor.length - (slot === 0 ? 4 : 6 + slot), { ...facts, permission: '' }), cursor }
+  const start = slot === 0 ? 0 : GUTTER + slot
+  const cursor = cursorText(draft, sizeOf(columns))
+  // A cell leads the bar, two keep its halves apart and two end it. The git state and the usage take
+  // at most half of what is left, with two cells before the cursor; the left half has the rest.
+  const across = columns - start - cursor.length - 5
+  const right = fitGit(Math.floor(across / 2) - 2, facts.git, usageText(facts.usage, sizeOf(columns)))
+  const spent = gitCells(right.git) + (right.git !== null && right.usage !== '' ? 2 : 0) + right.usage.length
+  const tail = spent === 0 ? 0 : spent + 2
+  const bar = { ...richest(across - tail, { ...facts, permission: named?.label ?? '' }), cursor }
   const room = columns - GUTTER - EDGE
   const laid = draft.text === null ? null : layOut(draft.text, room)
   const cap = rowCap(height, box.under)
-  // A draft that stood in the engine's rows a moment ago is taken at its own count, which is known
-  // first. Otherwise never fewer rows than either count: what is drawn above the draft must not land on it.
-  const count = Math.min(cap, laid !== null && box.isAligned ? laid.length : Math.max(box.rows ?? 1, laid?.length ?? 1))
   const shown = shownRows(laid, cap, facts)
   const pad = padRows(shown, cap, slot, facts)
-  // The last row: a cell, the copy of the mark, a cell at the least, the git part and the usage,
-  // and two cells to end it.
-  const right = fitGit(columns - (named === null ? 0 : named.mark.length + 1) - 4, facts.git, usageText(facts.usage, sizeOf(columns)))
-  const spent = gitCells(right.git) + (right.git !== null && right.usage !== '' ? 2 : 0) + right.usage.length
 
   return {
     columns,
-    tuning: isRelabelled ? tuningOf(columns) : 0,
+    tuning: tuningOf(columns),
     bar,
     slot,
-    mark: named?.mark ?? '',
-    label: named?.label ?? '',
-    // A cell leads the row, one keeps the line off what stands at its end, and two end the row.
-    line: lineOf(facts.command, facts.echo, columns - spent - 4),
-    // From the row under the box's top rule down to the bar: the rows the box shows, its bottom
-    // rule, the rows pinned under it, the rows added under those, and the bar's.
-    menu: menuOf(facts.menu, (shown ?? 1) + 2 + box.under + pad, columns - 2 * EDGE),
+    // After the badge and a cell, up to two cells short of the bar's right half.
+    line: lineOf(facts.command, facts.echo, across - facts.mode.length - tail - 3),
+    // From the row under the box's top rule down to the one above the bar: the rows the box shows,
+    // its bottom rule, the rows pinned under it and the rows added under those.
+    menu: menuOf(facts.menu, (shown ?? 1) + 1 + box.under + pad, columns - 2 * EDGE),
     git: right.git,
     usage: right.usage,
-    gap: Math.max(2, columns - (slot === 0 ? 0 : GUTTER + slot) - columnsOf(bar) - cursor.length - 2),
-    rows: box.isPlaced ? blockRows(count, laid, room, facts) : null,
+    gap: Math.max(2, columns - start - columnsOf(bar) - tail - cursor.length - 2),
     numbers: lineNumbers(laid, cap, facts),
     pad,
     under: box.under,
-    isFilled,
-    isMeasured: isRelabelled,
     read: found?.mode ?? null,
   }
-}
-
-// The bar on a row of its own, across the whole screen: its segments, the blank cells that keep its
-// halves apart, and the cursor at its far end.
-export type Bar = Segments & { cursor: string; gap: number }
-
-export const fitBar = (facts: Facts, draft: Cursor): Bar => {
-  const cursor = cursorText(draft, sizeOf(facts.columns))
-  const row = richest(facts.columns - cursor.length - 4, { ...facts, permission: '' })
-
-  return { ...row, cursor, gap: Math.max(2, facts.columns - columnsOf(row) - cursor.length - 2) }
 }

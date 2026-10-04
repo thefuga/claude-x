@@ -2,7 +2,7 @@ import type { ConfigRow, On, PromptEditInput, PromptEditResult } from 'claude-co
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine, Plugin } from 'claude-code/testing'
 
-import { EFFORT_ENTRY, PLACEHOLDER } from '../hooks/statusline/format'
+import { EFFORT_ENTRY } from '../hooks/statusline/format'
 
 const SURFACES = ['terminal', 'desktop'] as const
 const VIEWPORT = { columns: 170, rows: 42, isFullscreen: false }
@@ -63,13 +63,16 @@ const GAUGE: Plugin = {
   },
 }
 const START = { cwd: '/home/me/open-claude', surface: 'terminal', isInteractive: true } as const
+const LABELS = ['Manual', 'Auto', 'Plan', 'Accept edits', 'Bypass']
+// The permission mode the bar names, where it names one.
+const named = async (site: { findAll: (query: { type: 'Text' }) => Promise<{ text: string; props: Record<string, unknown> }[]> }) =>
+  (await site.findAll({ type: 'Text' })).find(text => LABELS.includes(text.text.trim()))
 const EFFORT = {
   command: 'effort',
   args: '',
   origin: { kind: 'composer' },
   presentation: { isFullscreen: true, columns: 170 },
 } as const
-const TITLES = '{"type":"ai-title","aiTitle":"Update Claude Code mods","sessionId":"abc"}\n'
 const VIM: ConfigRow = {
   key: 'editor',
   label: 'Editor mode',
@@ -81,7 +84,7 @@ const VIM: ConfigRow = {
 }
 
 // The slash commands the engine has in these tests.
-const COMMANDS = ['effort', 'rename', 'exit', 'compact']
+const COMMANDS = ['effort', 'exit', 'compact']
 const HOME_DRAFT = 'draft:home:/home/me/open-claude'
 
 type World = {
@@ -105,7 +108,7 @@ type World = {
   logs: string[]
 }
 
-// What the engine answers beneath the mod: a session on Opus with one title in its transcript, on a
+// What the engine answers beneath the mod: a session on Opus, on a
 // version of Claude Code the permission label was checked on.
 const world = (on: On): World => {
   const held: World = {
@@ -195,7 +198,6 @@ const world = (on: On): World => {
 
     return held.box
   })
-  on('prompt.suggest', () => ({ isShown: true }))
   on('ui.status', () => ({ value: undefined }))
   on('ui.render', { component: 'PromptHint' }, ($, e) => {
     const { Text } = $.ui.resolve(e)
@@ -222,14 +224,14 @@ const world = (on: On): World => {
       return outside ?? (e.argv.includes('diff') ? ran(0, held.numstat) : ran(128, ''))
     }
 
-    return ran(0, e.argv.includes(EFFORT_ENTRY) ? held.announced : TITLES)
+    return ran(0, e.argv.includes(EFFORT_ENTRY) ? held.announced : '')
   })
 
   return held
 }
 
 describe('status line', () => {
-  test("draws the bar over the engine's mark and its own copy of the mark under it", async ($, on) => {
+  test("draws the bar over the engine's mark, naming the mode in it", async ($, on) => {
     const clock = mock.clock(on)
     world(on)
     await $.session.start(START)
@@ -244,25 +246,25 @@ describe('status line', () => {
     // Until the strip has been laid out the engine's own mark keeps a slot at the head of the bar.
     expect(await left.find({ type: 'Client' })).toBeDefined()
     expect(await bar()).toMatchObject({ right: -2, width: 91 })
-    expect(await left.find({ type: 'Text', text: 'mode on' })).toBeUndefined()
+    expect(await named(left)).toBeUndefined()
 
     await left.resize({ columns: STRIP.auto, rows: 0 })
 
     expect(await bar()).toMatchObject({ right: -2, width: 120 })
-    expect((await left.find({ type: 'Text', text: 'auto mode on' }))?.props).toMatchObject({ color: '#fabd2f' })
+    expect(await named(left)).toMatchObject({ text: ' Auto', props: { color: '#fabd2f' } })
 
     await left.resize({ columns: STRIP.plan, rows: 0 })
 
-    expect((await left.find({ type: 'Text', text: 'plan mode on' }))?.text).toBe(' ⏸ plan mode on')
+    expect((await named(left))?.text).toBe(' Plan')
 
     // The engine's own line says a mode other than the manual one is on: the reading is not taken.
     await left.resize({ columns: STRIP.manual, rows: 0 })
 
-    expect(await left.find({ type: 'Text', text: 'mode on' })).toBeUndefined()
+    expect(await named(left)).toBeUndefined()
 
     await left.redraw(IDLE)
 
-    expect(await left.find({ type: 'Text', text: 'manual mode on' })).toBeDefined()
+    expect((await named(left))?.text).toBe(' Manual')
   })
 
   test('holds its mark against the mode each prompt goes out under', async ($, on) => {
@@ -275,18 +277,18 @@ describe('status line', () => {
     await left.resize({ columns: STRIP.auto, rows: 0 })
 
     // A version of Claude Code the reading was never checked on: read, and not yet shown.
-    expect(await left.find({ type: 'Text', text: 'auto mode on' })).toBeUndefined()
+    expect(await named(left)).toBeUndefined()
 
     await $.classic.UserPromptSubmit({ prompt: 'hi', permission_mode: 'auto' })
     await clock.settle()
 
-    expect(await left.find({ type: 'Text', text: 'auto mode on' })).toBeDefined()
+    expect((await named(left))?.text).toBe(' Auto')
     expect(held.kept).toEqual({ 'label-verdicts': { '2.9.0': true } })
 
     await $.classic.UserPromptSubmit({ prompt: 'hi', permission_mode: 'plan' })
     await clock.advance(150)
 
-    expect(await left.find({ type: 'Text', text: 'auto mode on' })).toBeUndefined()
+    expect(await named(left)).toBeUndefined()
     expect(held.kept).toEqual({ 'label-verdicts': { '2.9.0': false } })
   })
 
@@ -433,8 +435,9 @@ describe('status line', () => {
 
     expect(await tops(rule), 'the rule, on the last of the four rows added').toEqual([3])
     expect(await tops('INSERT')).toEqual([4])
-    expect(await tops('auto mode on')).toEqual([5])
-    expect(await tops(' '.repeat(120)), "the box's own rule, and the rows over the engine's mark").toEqual([-1, 0, 1, 2])
+    expect(await tops(' '.repeat(120)), "the box's own rule, the rows over the engine's mark, and the row under the bar").toEqual([
+      -1, 0, 1, 2, 5,
+    ])
     expect(await tops('1 '), 'the numbers stay with the draft').toContain(-2)
 
     held.box = { text: 'one\ntwo\nthree\nfour\nfive', cursor: 0 }
@@ -612,14 +615,14 @@ describe('status line', () => {
     await above.input({ key: 'command:0', text: 'e', kind: 'change' })
 
     expect(await ring('complete:next'), 'the ring is kept on the field').toEqual({})
-    expect(await names(), 'as many as the rows from under the box to the bar').toEqual(['e', 'edit', 'e!'])
+    expect(await names(), 'as many as the rows from under the box to the one above the bar').toEqual(['e', 'edit'])
     expect(await picked()).toBe('e')
 
     await ring('complete:next')
     await ring('complete:next')
     await ring('complete:next')
 
-    expect(await names(), 'the rows follow the pick').toEqual(['e!', 'edit!', 'expand'])
+    expect(await names(), 'the rows follow the pick').toEqual(['e!', 'edit!'])
     expect(await picked()).toBe('edit!')
 
     await ring('complete:previous')

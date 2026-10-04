@@ -5,8 +5,8 @@ import type { Kind } from '../syntax/markdown'
 type Style = Omit<PromptDecoration, 'start' | 'end'>
 
 // Gruvbox, as in the mock. Inside tmux Claude Code draws in 256 colors unless CLAUDE_CODE_TMUX_TRUECOLOR
-// is set, so `NORMAL` is a step off #83a598 to round to a teal, and the fills are plain grays, which
-// land on the gray ramp instead of the cube's reds.
+// is set, so `NORMAL` is a step off #83a598 to round to a teal, and the menu's background is a plain
+// gray, which lands on the gray ramp instead of the cube's reds.
 const BADGES: Record<string, string> = {
   NORMAL: '#7fa598',
   INSERT: '#b8bb26',
@@ -27,8 +27,6 @@ export const theme = {
   badge: { text: '#282828', other: '#a89984' },
   permission: '#ebdbb2',
   effort: '#fe8019',
-  bar: '#4e4e4e',
-  tab: { text: '#ebdbb2', background: '#3a3a3a' },
   // What the command line says when it will not do as asked.
   warning: '#fb4934',
   // The branch and the lines added and deleted, as opencode.vim colors them.
