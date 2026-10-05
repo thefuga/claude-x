@@ -1,5 +1,5 @@
 {
-  "name": "Open Claude",
+  "name": "claude-x",
   "base": "dark",
   "overrides": {
     "promptBorder": "#4e4e4e",
