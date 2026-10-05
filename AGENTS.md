@@ -1,0 +1,34 @@
+# AGENTS.md
+
+## Commands
+
+- Each mod is checked in its own folder (`mods/<name>`): `claude plugin validate .`, `tsc -p .` and `claude plugin test .`. Run `claude plugin validate .` at the root after touching `.claude-plugin/marketplace.json`.
+- `tsc` needs the engine's types, which Claude Code writes to each mod's `.claude-plugin/types/` (git-ignored) when it loads the mod. If they are missing, load the mod once (`claude --plugin-dir mods/<name>`).
+- There is no build step, no `package.json` and no lockfile: Claude Code loads the TypeScript sources directly.
+
+## Layout
+
+- The repo is a Claude Code plugin marketplace (`claude-x`). `.claude-plugin/marketplace.json` lists one plugin per folder under `mods/`, by relative path. A new mod gets a folder there, an entry in the marketplace, a row in the README's mod table, and a README of its own.
+- A mod is `.claude-plugin/plugin.json` (name, version, description, options as `userConfig`), `hooks/hooks.json` (the module to load), `hooks/register.ts(x)`, plain modules beside it in `hooks/`, `types/index.d.ts`, `tests/` and `README.md`.
+- READMEs: the root `README.md` is a map (what the repo is, the mod table with links, install). Each mod's README opens with what it does, then `## Install` and `## Works with`; the root table links to its sections by anchor, so keep those headings stable.
+
+## Live Loading
+
+- The owner's sessions load the mods straight from this clone (`CLAUDE_CODE_PLUGIN_DIRS` names the three `mods/*` folders), and a save reloads the mod in every open session. Keep each mod loadable between saves; for a risky change, work on a copy and load it with `--plugin-dir`, which wins over a folder of the same plugin name.
+- Loaded that way a mod is `<name>@inline`, the key its options sit under in `pluginConfigs` (installed from the marketplace it is `<name>@claude-x`).
+- `claude plugin test` checks the tree a hook returns, never how the terminal lays it out. To see a change render, run a second Claude Code in a private tmux server and read the screen. Those sessions run as the owner: they land in `/resume` and the prompt history, so send as few prompts as possible, and never send keys into `/config` or other pickers.
+
+## Engine Rules
+
+- Every call on `$` lives in `hooks/register.ts(x)`: the engine reads what a mod uses off that file, so `$` cannot be passed to a function another file exports.
+- `$.state` outlives a reload; a value whose shape changes takes a new key. A `ui.render` hook may read state but not write it: write on the next tick (`$.clock.after(0, …)`) or from an event.
+- Mods talk through state only. Any mod reads another's, only its owner writes it, so none depends on another being installed. Today `statusline` owns `mode` (read by `syntax`), and `vim` owns `command`, `echo` and `menu` (read and drawn by `statusline`). Declare a value read from another mod in the reader's `types/index.d.ts` too.
+- A contract file (`types/index.d.ts`) exports types and nothing else (`export {}` fails validation).
+- Tests play another mod with an inline plugin: `test(name, { plugins: [...] }, body)`; the inline plugin's `register` closes over nothing of the test file. The test's `$` has no `state`: read state through an inline plugin that draws it.
+
+## TUI Gotchas
+
+- The prompt box is Claude Code's own; a mod draws only from the footer sites (`PromptHint`, `SessionMode`) and the band above the prompt (`AbovePrompt`). Absolute boxes from the footer are clipped at the box's top rule, and the band cannot draw below itself, so the notice row between them is out of reach.
+- Box sizes, the permission mark's width and the band's `bodyColumns` are read off undocumented layout and change between Claude Code versions (2.1.289 told the band 5 columns short of the screen). `VERIFIED` in `mods/statusline/hooks/format.ts` lists the versions the permission reading was checked on; add one only after checking it.
+- An absolute box with a background that reaches the screen's last cell is not drawn at all.
+- `prompt.edit` decorations drop whenever the draft changes without a keystroke (a rebound Enter, vim normal-mode edits) and only the next keystroke can paint again; `$.prompt.fill` with `replace` repaints but moves the cursor to the end.

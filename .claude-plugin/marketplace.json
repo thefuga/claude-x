@@ -1,24 +1,40 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "claude-code-vim",
+  "name": "claude-x",
   "description": "Erick Fuga's Claude Code mods: a vim-style status bar, colors for the draft, and a vim command line.",
   "owner": {
-    "name": "Erick Fuga"
+    "name": "Erick Fuga",
+    "url": "https://thefuga.dev"
   },
   "plugins": [
     {
       "name": "statusline",
       "description": "A vim-style status bar in the footer: editor mode, permission mode, model, effort, git state, usage and cursor. Numbers the draft's lines and keeps the prompt box taller (minLines, /expand).",
+      "author": {
+        "name": "Erick Fuga",
+        "url": "https://thefuga.dev"
+      },
+      "homepage": "https://github.com/thefuga/claude-x/tree/main/mods/statusline",
       "source": "./mods/statusline"
     },
     {
       "name": "syntax",
       "description": "Colors the prompt's draft as it is typed: its markdown, the code in its fences, and in shell mode the command.",
+      "author": {
+        "name": "Erick Fuga",
+        "url": "https://thefuga.dev"
+      },
+      "homepage": "https://github.com/thefuga/claude-x/tree/main/mods/syntax",
       "source": "./mods/syntax"
     },
     {
       "name": "vim",
       "description": "A vim command line: :w and :e keep a draft per session, :q quits, any other name runs that slash command, with Tab completion. Drawn in the statusline mod's bar.",
+      "author": {
+        "name": "Erick Fuga",
+        "url": "https://thefuga.dev"
+      },
+      "homepage": "https://github.com/thefuga/claude-x/tree/main/mods/vim",
       "source": "./mods/vim"
     }
   ]

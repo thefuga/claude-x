@@ -16,9 +16,20 @@ The prompt box stays as Claude Code draws it. The bar takes the footer's first r
 Code's own permission mark, which it names after the badge; a blank row under it keeps it off the
 screen's last row.
 
-Where the [vim](../vim) mod is installed, its command line opens in the bar after the badge, and
-its completions stand just above it. The [syntax](../syntax) mod reads the editor's mode from here
-to color a shell command as one.
+## Install
+
+```sh
+claude plugin marketplace add thefuga/claude-x
+claude plugin install statusline@claude-x
+```
+
+## Works with
+
+- [vim](../vim/README.md): its command line opens in the bar after the badge, and its completions
+  stand just above it.
+- [syntax](../syntax/README.md): reads the editor's mode from here to color a shell command as one.
+
+Neither is needed: without vim the bar has no command line, and nothing here reads syntax.
 
 ## Getting the look
 
@@ -30,7 +41,9 @@ to color a shell command as one.
   shell-mode accents, and dims the prompt's rules to the bar's gray.
 - **Vim editor.** `/config` → Editor mode → vim gives the badge its `NORMAL` and `VISUAL`.
 
-The options, in `/config` or under `pluginConfigs."statusline@<marketplace>".options` in the settings
+## Options
+
+In `/config`, or under `pluginConfigs."statusline@claude-x".options` in the settings
 (`statusline@inline` when loaded from a folder):
 
 | Option | Default | What it does |

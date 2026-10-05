@@ -3,8 +3,11 @@
   "version": "0.1.0",
   "description": "A vim-style status bar in the Claude Code footer: editor mode, permission mode, model, effort, git state, usage and cursor; numbers the draft's lines and keeps the prompt box taller.",
   "author": {
-    "name": "Erick Fuga"
+    "name": "Erick Fuga",
+    "url": "https://thefuga.dev"
   },
+  "homepage": "https://github.com/thefuga/claude-x/tree/main/mods/statusline",
+  "repository": "https://github.com/thefuga/claude-x",
   "types": "./types/index.d.ts",
   "userConfig": {
     "lineNumbers": {

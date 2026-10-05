@@ -2,11 +2,25 @@
 
 Colors the draft in Claude Code's prompt box as it is typed, as opencode.vim does: headings,
 emphasis, code spans, links, lists and quotes, and the code inside a fence by the language it
-names. In shell mode the draft is a command and is colored as one; the mode is read from the
-[statusline](../statusline) mod, and without it every draft is markdown.
+names. In shell mode the draft is a command and is colored as one.
 
 There is no tree-sitter in a mod, so the colors come from a scanner of its own (`hooks/markdown.ts`,
 `hooks/code.ts`). A draft longer than 20,000 characters is left plain.
+
+## Install
+
+```sh
+claude plugin marketplace add thefuga/claude-x
+claude plugin install syntax@claude-x
+```
+
+It has no options: disable it (`claude plugin disable syntax@claude-x`) to leave the draft plain.
+
+## Works with
+
+- [statusline](../statusline/README.md): the editor's mode is read from it, which is how a shell
+  command is told from markdown. Without it every draft is markdown.
+- [vim](../vim/README.md): a draft it loads back with `:e` is colored at the next typed key.
 
 ## Known issues
 

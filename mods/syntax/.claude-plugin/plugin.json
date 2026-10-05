@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "description": "Colors the prompt's draft as it is typed: its markdown, the code in its fences, and in shell mode the command.",
   "author": {
-    "name": "Erick Fuga"
+    "name": "Erick Fuga",
+    "url": "https://thefuga.dev"
   },
+  "homepage": "https://github.com/thefuga/claude-x/tree/main/mods/syntax",
+  "repository": "https://github.com/thefuga/claude-x",
   "types": "./types/index.d.ts"
 }
