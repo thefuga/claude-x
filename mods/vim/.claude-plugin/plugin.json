@@ -1,0 +1,9 @@
+{
+  "name": "vim",
+  "version": "0.1.0",
+  "description": "A vim command line for Claude Code: :w and :e keep a draft per session, :q quits (! to force), and any other name runs that slash command, with Tab completion. Opened by the focus chord for the area above the prompt; drawn in the statusline mod's bar.",
+  "author": {
+    "name": "Erick Fuga"
+  },
+  "types": "./types/index.d.ts"
+}

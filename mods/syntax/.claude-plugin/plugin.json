@@ -1,0 +1,9 @@
+{
+  "name": "syntax",
+  "version": "0.1.0",
+  "description": "Colors the prompt's draft as it is typed: its markdown, the code in its fences, and in shell mode the command.",
+  "author": {
+    "name": "Erick Fuga"
+  },
+  "types": "./types/index.d.ts"
+}
