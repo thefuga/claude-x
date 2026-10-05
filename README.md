@@ -2,6 +2,8 @@
 
 My opinionated mods for Claude Code.
 
+![The three mods together: markdown colored as it is typed, line numbers, the status bar, a taller box with /expand, and the vim command line with Tab completion and :w](docs/demo.gif)
+
 The repo is a **plugin marketplace**: a catalogue (`.claude-plugin/marketplace.json`) that lists
 the plugins kept in it, each in its own folder under `mods/`. Claude Code installs plugins only
 through a marketplace, so adding this one lets any machine install any of the mods, alone or
