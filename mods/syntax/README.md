@@ -4,6 +4,9 @@ Colors the draft in Claude Code's prompt box as it is typed, as opencode.vim doe
 emphasis, code spans, links, lists and quotes, and the code inside a fence by the language it
 names. In shell mode the draft is a command and is colored as one.
 
+The colors are Claude Code's own theme colors, so they follow whatever `/theme` picks, light or
+dark.
+
 There is no tree-sitter in a mod, so the colors come from a scanner of its own (`hooks/markdown.ts`,
 `hooks/code.ts`). A draft longer than 20,000 characters is left plain.
 

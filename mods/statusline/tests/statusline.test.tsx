@@ -15,7 +15,6 @@ const CYCLING = { ...IDLE, hint: '(shift+tab to cycle) · ← for agents' }
 const BAND = { plugin: 'statusline', component: 'AbovePrompt', surface: 'terminal', viewport: FULLSCREEN, requestId: 'above-prompt' } as const
 const BLOCK = { ...HINT, surface: 'terminal', viewport: FULLSCREEN } as const
 const TABS = { ...MODES, surface: 'terminal', viewport: FULLSCREEN } as const
-const FILL = '#4e4e4e'
 // What the engine leaves the measuring strip at 120 columns, beside its mark for each mode.
 const STRIP = { plan: 102, auto: 101, manual: 100 }
 
@@ -241,7 +240,7 @@ describe('status line', () => {
     const left = await $.ui.mount({ ...BLOCK, props: CYCLING })
     const bar = async () => (await left.findAll({ type: 'Box' })).map(box => box.props).find(props => props.top === 0)
 
-    expect((await left.find({ type: 'Text', text: 'INSERT' }))?.props).toMatchObject({ backgroundColor: '#b8bb26' })
+    expect((await left.find({ type: 'Text', text: 'INSERT' }))?.props).toMatchObject({ backgroundColor: 'success' })
     expect(await left.find({ type: 'Text', text: 'Claude Opus 5.5' })).toBeDefined()
     expect(await left.find({ type: 'Text', text: 'Ln 1, Col 1 · 100%' })).toBeDefined()
     expect(await left.find({ type: 'Text', text: '0 (0%)' })).toBeDefined()
@@ -253,7 +252,7 @@ describe('status line', () => {
     await left.resize({ columns: STRIP.auto, rows: 0 })
 
     expect(await bar()).toMatchObject({ right: -2, width: 120 })
-    expect(await named(left)).toMatchObject({ text: ' Auto', props: { color: '#fabd2f' } })
+    expect(await named(left)).toMatchObject({ text: ' Auto', props: { color: 'warning' } })
 
     await left.resize({ columns: STRIP.plan, rows: 0 })
 
@@ -333,7 +332,7 @@ describe('status line', () => {
     const left = await $.ui.mount({ ...BLOCK, props: IDLE })
 
     expect(await left.find({ type: 'Text', text: 'Claude Sonnet 5.5' })).toBeDefined()
-    expect((await left.find({ type: 'Text', text: 'xhigh' }))?.props).toMatchObject({ color: '#fe8019', bold: true })
+    expect((await left.find({ type: 'Text', text: 'xhigh' }))?.props).toMatchObject({ color: 'claude', bold: true })
     expect(await left.find({ type: 'Text', text: '19.7K (2%) · $0.13' })).toBeDefined()
   })
 
@@ -367,7 +366,7 @@ describe('status line', () => {
     await clock.settle()
     const left = await $.ui.mount({ ...BLOCK, props: { ...IDLE, hint: '' } })
 
-    expect((await left.find({ type: 'Text', text: 'NORMAL' }))?.props).toMatchObject({ backgroundColor: '#7fa598' })
+    expect((await left.find({ type: 'Text', text: 'NORMAL' }))?.props).toMatchObject({ backgroundColor: 'suggestion' })
 
     await left.redraw({ ...IDLE, hint: '-- VISUAL -- ← for agents' })
 
@@ -522,7 +521,7 @@ describe('status line', () => {
     await $.command.run({ ...LINE, args: '|no write since last change' })
 
     expect(await left.find({ type: 'Text', text: 'COMMAND' })).toBeUndefined()
-    expect((await left.find({ type: 'Text', text: 'no write since last change' }))?.props).toMatchObject({ color: '#fb4934' })
+    expect((await left.find({ type: 'Text', text: 'no write since last change' }))?.props).toMatchObject({ color: 'error' })
   })
 
   test('shows the branch and the lines changed before the usage, and reads them again after a tool call', async ($, on) => {
@@ -536,8 +535,8 @@ describe('status line', () => {
     const texts = async () => (await left.findAll({ type: 'Text' })).map(text => text.text)
 
     expect(await texts()).toContain('\uf418 feat/footer-git')
-    expect((await left.find({ type: 'Text', text: '+3' }))?.props).toMatchObject({ color: '#b8bb26' })
-    expect((await left.find({ type: 'Text', text: '-1' }))?.props).toMatchObject({ color: '#fb4934' })
+    expect((await left.find({ type: 'Text', text: '+3' }))?.props).toMatchObject({ color: 'success' })
+    expect((await left.find({ type: 'Text', text: '-1' }))?.props).toMatchObject({ color: 'error' })
 
     held.numstat = ''
     await $.classic.PostToolUse({ tool_name: 'Edit', tool_input: {}, tool_response: {}, tool_use_id: 'toolu_1' })

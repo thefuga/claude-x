@@ -23,6 +23,7 @@
 - Every call on `$` lives in `hooks/register.ts(x)`: the engine reads what a mod uses off that file, so `$` cannot be passed to a function another file exports.
 - `$.state` outlives a reload; a value whose shape changes takes a new key. A `ui.render` hook may read state but not write it: write on the next tick (`$.clock.after(0, …)`) or from an event.
 - Mods talk through state only. Any mod reads another's, only its owner writes it, so none depends on another being installed. Today `statusline` owns `mode` (read by `syntax`), and `vim` owns `command`, `echo` and `menu` (read and drawn by `statusline`). Declare a value read from another mod in the reader's `types/index.d.ts` too.
+- Colors are keys of Claude Code's theme (`success`, `warning`, `suggestion`, `inactive`…), never hex values, so the mods follow any theme. Element colors and `prompt.edit` decorations both take them.
 - A contract file (`types/index.d.ts`) exports types and nothing else (`export {}` fails validation).
 - Tests play another mod with an inline plugin: `test(name, { plugins: [...] }, body)`; the inline plugin's `register` closes over nothing of the test file. The test's `$` has no `state`: read state through an inline plugin that draws it.
 

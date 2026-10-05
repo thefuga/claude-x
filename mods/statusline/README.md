@@ -37,8 +37,8 @@ Neither is needed: without vim the bar has no command line, and nothing here rea
   the default renderer, or below 64 columns, the status line keeps to the two rows under the prompt.
 - **True color in tmux.** Inside tmux Claude Code rounds every color to the 256-color palette. Start
   it with `CLAUDE_CODE_TMUX_TRUECOLOR=1` (and tmux's `RGB` terminal feature on) to get the exact ones.
-- **Theme.** `/theme` → "claude-x" (`themes/gruvbox.json`) recolors the plan, accept-edits and
-  shell-mode accents, and dims the prompt's rules to the bar's gray.
+- **Theme.** Every color is one of Claude Code's own theme colors, so the bar follows whatever
+  `/theme` picks, light or dark.
 - **Vim editor.** `/config` → Editor mode → vim gives the badge its `NORMAL` and `VISUAL`.
 
 ## Options

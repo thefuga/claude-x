@@ -186,13 +186,13 @@ describe('code', () => {
 describe('paint', () => {
   test('gives each span the style of its kind, an inner one after the one it is in', () => {
     expect(paint('# a', false)).toEqual([
-      { start: 0, end: 3, color: '#fabd2f', bold: true },
-      { start: 0, end: 1, color: '#8a8a8a', bold: false, italic: false, underline: false },
+      { start: 0, end: 3, color: 'warning', bold: true },
+      { start: 0, end: 1, color: 'subtle', bold: false, italic: false, underline: false },
     ])
   })
 
   test('reads a draft in shell mode as a command, not as markdown', () => {
-    expect(paint('ls *.ts # all of *them*', true)).toEqual([{ start: 8, end: 23, color: '#8a8a8a', italic: true }])
+    expect(paint('ls *.ts # all of *them*', true)).toEqual([{ start: 8, end: 23, color: 'inactive', italic: true }])
   })
 
   test('paints nothing over a draft too long to read at every key', () => {

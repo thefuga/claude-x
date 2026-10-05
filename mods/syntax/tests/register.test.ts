@@ -35,14 +35,14 @@ describe('syntax', () => {
     on('prompt.edit', ($, e) => ({ text: `${e.text.slice(0, e.start)}${e.inputText}${e.text.slice(e.end)}`, cursor: e.start + e.inputText.length }))
 
     expect((await type($, '# fix')).decorations).toEqual([
-      { start: 0, end: 5, color: '#fabd2f', bold: true },
-      { start: 0, end: 1, color: '#8a8a8a', bold: false, italic: false, underline: false },
+      { start: 0, end: 5, color: 'warning', bold: true },
+      { start: 0, end: 1, color: 'subtle', bold: false, italic: false, underline: false },
     ])
 
     // In shell mode, as the statusline mod reads it off the hint, a `#` starts a comment.
     await $.command.run({ ...MODE, args: 'SHELL' })
 
-    expect((await type($, '# fix')).decorations).toEqual([{ start: 0, end: 5, color: '#8a8a8a', italic: true }])
+    expect((await type($, '# fix')).decorations).toEqual([{ start: 0, end: 5, color: 'inactive', italic: true }])
 
     await $.command.run({ ...MODE, args: 'INSERT' })
 
