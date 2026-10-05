@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "claude-x",
-  "description": "Erick Fuga's Claude Code mods: a vim-style status bar, colors for the draft, and a vim command line.",
+  "description": "Erick Fuga's Claude Code mods: a vim-style status bar, colors for the draft, a vim command line, and the draft's attachments as chips.",
   "owner": {
     "name": "Erick Fuga",
     "url": "https://thefuga.dev"
@@ -36,6 +36,16 @@
       },
       "homepage": "https://github.com/thefuga/claude-x/tree/main/mods/vim",
       "source": "./mods/vim"
+    },
+    {
+      "name": "attachments",
+      "description": "The draft's attachments as chips above the prompt: each pasted picture, pasted text and @-mentioned file or folder with a glyph for its type, its path and what it is, and a × to take it out of the draft.",
+      "author": {
+        "name": "Erick Fuga",
+        "url": "https://thefuga.dev"
+      },
+      "homepage": "https://github.com/thefuga/claude-x/tree/main/mods/attachments",
+      "source": "./mods/attachments"
     }
   ]
 }

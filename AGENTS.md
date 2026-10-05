@@ -14,7 +14,7 @@
 
 ## Live Loading
 
-- The owner's sessions load the mods straight from this clone (`CLAUDE_CODE_PLUGIN_DIRS` names the three `mods/*` folders), and a save reloads the mod in every open session. Keep each mod loadable between saves; for a risky change, work on a copy and load it with `--plugin-dir`, which wins over a folder of the same plugin name.
+- The owner's sessions load the mods straight from this clone (`CLAUDE_CODE_PLUGIN_DIRS` names the `mods/*` folders), and a save reloads the mod in every open session. Keep each mod loadable between saves; for a risky change, work on a copy and load it with `--plugin-dir`, which wins over a folder of the same plugin name.
 - Loaded that way a mod is `<name>@inline`, the key its options sit under in `pluginConfigs` (installed from the marketplace it is `<name>@claude-x`).
 - `claude plugin test` checks the tree a hook returns, never how the terminal lays it out. To see a change render, run a second Claude Code in a private tmux server and read the screen. Those sessions run as the owner: they land in `/resume` and the prompt history, so send as few prompts as possible, and never send keys into `/config` or other pickers.
 
@@ -22,7 +22,7 @@
 
 - Every call on `$` lives in `hooks/register.ts(x)`: the engine reads what a mod uses off that file, so `$` cannot be passed to a function another file exports.
 - `$.state` outlives a reload; a value whose shape changes takes a new key. A `ui.render` hook may read state but not write it: write on the next tick (`$.clock.after(0, …)`) or from an event.
-- Mods talk through state only. Any mod reads another's, only its owner writes it, so none depends on another being installed. Today `statusline` owns `mode` (read by `syntax`), and `vim` owns `command`, `echo` and `menu` (read and drawn by `statusline`). Declare a value read from another mod in the reader's `types/index.d.ts` too.
+- Mods talk through state only. Any mod reads another's, only its owner writes it, so none depends on another being installed. Today `statusline` owns `mode` (read by `syntax`), `vim` owns `command`, `echo` and `menu` (read and drawn by `statusline`), and `attachments` owns `chips` (read by none). Declare a value read from another mod in the reader's `types/index.d.ts` too.
 - Colors are keys of Claude Code's theme (`success`, `warning`, `suggestion`, `inactive`…), never hex values, so the mods follow any theme. Element colors and `prompt.edit` decorations both take them.
 - A contract file (`types/index.d.ts`) exports types and nothing else (`export {}` fails validation).
 - Tests play another mod with an inline plugin: `test(name, { plugins: [...] }, body)`; the inline plugin's `register` closes over nothing of the test file. The test's `$` has no `state`: read state through an inline plugin that draws it.
@@ -33,3 +33,5 @@
 - Box sizes, the permission mark's width and the band's `bodyColumns` are read off undocumented layout and change between Claude Code versions (2.1.289 told the band 5 columns short of the screen). `VERIFIED` in `mods/statusline/hooks/format.ts` lists the versions the permission reading was checked on; add one only after checking it.
 - An absolute box with a background that reaches the screen's last cell is not drawn at all.
 - `prompt.edit` decorations drop whenever the draft changes without a keystroke (a rebound Enter, vim normal-mode edits) and only the next keystroke can paint again; `$.prompt.fill` with `replace` repaints but moves the cursor to the end.
+- A paste raises no `prompt.edit` when it becomes a placeholder (`[Image #N]`, `[Pasted text #N +L lines]`), so a mod that follows the draft reads it on a timer. A pasted picture is saved at once as `<temp>/claude-<uid>/<project>/<session>/images/<N>.<format>` (undocumented, seen on 2.1.289); a pasted text stays in memory until it is sent. Removing the placeholder from the draft removes the attachment.
+- A mod's `Image` is drawn with the kitty graphics protocol only, and Claude Code turns that off inside tmux; there, a picture can only be a `Raster` of half-blocks.
