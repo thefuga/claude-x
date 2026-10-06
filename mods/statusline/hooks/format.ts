@@ -97,7 +97,7 @@ const SEPARATOR = 3
 export const MARK_SLOT = 24 + SEPARATOR
 
 // The versions of Claude Code the label was checked on, mode by mode and width by width.
-export const VERIFIED = ['2.1.287']
+export const VERIFIED = ['2.1.287', '2.1.291']
 
 // The footer row is shared with the engine's own mode pill on the left.
 const PILL_COLUMNS = 24
@@ -444,11 +444,20 @@ export const permissionOf = (columns: number, reading: Reading | null): Permissi
 
 // The engine's own line names a key to cycle with in every mode but the manual one, and offers
 // `? for shortcuts` in that one alone.
-const contradicts = (hint: string, { mode }: Permission) =>
+export const contradicts = (hint: string, mode: string) =>
   mode === 'default' ? /\(\S+ to cycle\)/.test(hint) : hint.includes('? for shortcuts')
 
-// Which versions of Claude Code a prompt was sent on with the label reading the mode the engine
-// named, and which it read another on, as kept between sessions.
+// The mode a session starts in where the command line asks for none: the one the settings name, or
+// the manual one.
+export const startModeOf = (settings: Readonly<Record<string, unknown>>) => {
+  const { permissions } = settings
+  const held: Record<string, unknown> = typeof permissions === 'object' && permissions !== null ? { ...permissions } : {}
+
+  return typeof held.defaultMode === 'string' ? held.defaultMode : 'default'
+}
+
+// Which versions of Claude Code the label read the mode right on, as a session started or a prompt
+// went out, and which it read another on, as kept between sessions.
 export const verdictsOf = (kept: unknown): Record<string, boolean> => {
   const held: Record<string, unknown> = typeof kept === 'object' && kept !== null ? { ...kept } : {}
 
@@ -533,7 +542,7 @@ export const fitBlock = (facts: Drawn): Block => {
   const found = permissionOf(columns, facts.reading)
   // The bar names the mode in the mark's place only where the reading is believed, and nothing the
   // engine itself says of the mode stands against it.
-  const named = found !== null && facts.isBelieved && !contradicts(facts.hint, found) ? found : null
+  const named = found !== null && facts.isBelieved && !contradicts(facts.hint, found.mode) ? found : null
   const slot = named === null ? MARK_SLOT : 0
   const start = slot === 0 ? 0 : GUTTER + slot
   const cursor = cursorText(draft, sizeOf(columns))

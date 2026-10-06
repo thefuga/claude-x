@@ -121,9 +121,14 @@ terminal width the mod asks for the few cells more that leave every mark a room 
 named: the mark keeps its slot at the head of the bar instead.
 
 The reading rests on how one version of Claude Code lays its footer out, so it is believed per
-version: on the ones it was checked on (`VERIFIED` in `format.ts`), and on any other once a prompt
-has gone out under the mode the bar read at the time (the one moment the engine names the mode, in
-`UserPromptSubmit`). A version it once read wrong on stays unnamed, and shows the mark.
+version: on the ones it was checked on (`VERIFIED` in `format.ts`), and on any other once it has
+read a mode known another way. A session starts in the mode the settings name
+(`permissions.defaultMode`, the manual one without it) unless the command line asks for another,
+so the first reading after the start is held against that; and the engine names the mode each
+prompt goes out under (`UserPromptSubmit`), so the reading at that moment is held against it. After
+a Claude Code update, then, the first session names the mode as soon as its strip is measured, and
+one started in another mode (`--permission-mode`) waits for its first prompt. A version it once read
+wrong on stays unnamed, and shows the mark.
 
 None of this is a documented layout. If a Claude Code update moves the prompt, the bar may land in
 the wrong place until the mod is fixed for it.

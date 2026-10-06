@@ -293,6 +293,57 @@ describe('status line', () => {
     expect(held.kept).toEqual({ 'label-verdicts': { '2.9.0': false } })
   })
 
+  test('holds its first reading against the mode the settings start a session in', async ($, on) => {
+    const clock = mock.clock(on)
+    const held = world(on)
+    held.version = '2.9.0'
+    held.settings = { permissions: { defaultMode: 'auto' } }
+    await $.session.start(START)
+    await $.classic.SessionStart({ source: 'startup' })
+    await clock.settle()
+    const left = await $.ui.mount({ ...BLOCK, props: CYCLING })
+    await left.resize({ columns: STRIP.auto, rows: 0 })
+    await clock.settle()
+
+    expect((await named(left))?.text).toBe(' Auto')
+    expect(held.kept).toEqual({ 'label-verdicts': { '2.9.0': true } })
+  })
+
+  test('leaves a session started in another mode for a prompt to judge', async ($, on) => {
+    const clock = mock.clock(on)
+    const held = world(on)
+    held.version = '2.9.0'
+    held.settings = { permissions: { defaultMode: 'auto' } }
+    await $.session.start(START)
+    await $.classic.SessionStart({ source: 'startup' })
+    await clock.settle()
+    const left = await $.ui.mount({ ...BLOCK, props: CYCLING })
+    // Started in plan mode from the command line, then cycled to the one the settings name.
+    await left.resize({ columns: STRIP.plan, rows: 0 })
+    await clock.settle()
+    await left.resize({ columns: STRIP.auto, rows: 0 })
+    await clock.settle()
+
+    expect(await named(left)).toBeUndefined()
+    expect(held.kept).toEqual({})
+  })
+
+  test('takes no reading for the mode a session started in once it could have been changed', async ($, on) => {
+    const clock = mock.clock(on)
+    const held = world(on)
+    held.version = '2.9.0'
+    held.settings = { permissions: { defaultMode: 'auto' } }
+    await $.session.start(START)
+    await $.classic.SessionStart({ source: 'startup' })
+    await clock.advance(5000)
+    const left = await $.ui.mount({ ...BLOCK, props: CYCLING })
+    await left.resize({ columns: STRIP.auto, rows: 0 })
+    await clock.settle()
+
+    expect(await named(left)).toBeUndefined()
+    expect(held.kept).toEqual({})
+  })
+
   test('keeps to one row after the mark where it cannot draw outside its site', async ($, on) => {
     const clock = mock.clock(on)
     world(on)

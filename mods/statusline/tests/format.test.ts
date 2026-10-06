@@ -31,6 +31,7 @@ import {
   rowCap,
   sharesMark,
   standsIn,
+  startModeOf,
   transcriptPath,
   truncate,
   tuningOf,
@@ -239,6 +240,15 @@ describe('format', () => {
       false,
     ])
     expect([sharesMark('auto', 'dontAsk'), sharesMark('auto', 'plan')]).toEqual([true, false])
+  })
+
+  test('takes the mode a session starts in from the settings, or the manual one', () => {
+    expect(startModeOf({ permissions: { defaultMode: 'auto', allow: [] } })).toBe('auto')
+    expect([startModeOf({}), startModeOf({ permissions: { allow: [] } }), startModeOf({ permissions: 'auto' })]).toEqual([
+      'default',
+      'default',
+      'default',
+    ])
   })
 
   test('fits the bar to the whole width, naming the mode the strip measured, with the usage before the cursor', () => {

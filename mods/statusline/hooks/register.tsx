@@ -21,6 +21,7 @@ import {
   UNPLACED,
   announcedEfforts,
   boxRowsOf,
+  contradicts,
   draftOf,
   editorMode,
   effortLevel,
@@ -35,6 +36,7 @@ import {
   readingOf,
   sharesMark,
   standsIn,
+  startModeOf,
   transcriptPath,
   verdictsOf,
 } from './format'
@@ -53,6 +55,9 @@ const DOCKED = 10
 const TALL = 40
 // Where the verdicts on the permission label are kept between sessions.
 const VERDICTS = 'label-verdicts'
+// How long after the start the mark's first reading still stands for the mode the session started
+// in. It comes within a second; past this the mode may have been changed.
+const START_MS = 5000
 // The slash command that stands the box at its expanded height, for a key to be bound to
 // (`command:expand`); `:expand` in the vim mod's command line runs it too.
 const EXPAND = 'expand'
@@ -96,8 +101,10 @@ let gitRead: { isAgain: boolean } | undefined
 let band: { maxRows: number; height: number } | undefined
 // The plugins with a status line pinned under the prompt: a row each, between its rule and the footer.
 let pinned = new Set<string>()
-// The permission mode the engine's mark was last read as, believed or not.
+// The permission mode the engine's mark was last read as, believed or not, and whether the session
+// has just started with the mark yet to be read.
 let marked: string | null = null
+let isStarting = false
 let engine: string | undefined
 let seenPrompt: string | undefined
 let seenBox: string | undefined
@@ -299,7 +306,8 @@ const setBelieved = async ($: EngineInterface, isOn: boolean) => {
 
 // The label is read off how the engine lays its own mark out, which another version may do another
 // way. So each version is believed on its record: what was checked when this was written, and since
-// then what the label read each time a prompt went out under a mode the engine named.
+// then what the label read as a session started in a known mode, and each time a prompt went out
+// under a mode the engine named.
 const syncBelieved = async ($: EngineInterface) => {
   const { version } = await $.session.version()
   engine = version
@@ -334,6 +342,36 @@ const judgeLabel = async ($: EngineInterface, said: string) => {
   }
 
   await setBelieved($, isTrue)
+}
+
+// A session starts in the mode its settings name unless the command line asks for another. So a
+// first reading of that mode, which the engine's own line does not contradict, is as good as a
+// prompt sent under it, on a version with no verdict yet; any other is left for a prompt to judge.
+const confirmStart = async ($: EngineInterface, found: string, hint: string) => {
+  if (found !== startModeOf(await $.settings.read()) || contradicts(hint, found)) {
+    return
+  }
+
+  const { version } = await $.session.version()
+  const verdicts = verdictsOf(await $.store.get(VERDICTS))
+
+  if (verdicts[version] === undefined) {
+    await $.store.set(VERDICTS, { ...verdicts, [version]: true })
+    await setBelieved($, true)
+  }
+}
+
+// The first reading since the session started is held against the mode it started in, on the next
+// tick: a draw cannot write.
+const noteFirstReading = ($: EngineInterface, found: string | null, hint: string) => {
+  if (!isStarting || found === null) {
+    return
+  }
+
+  isStarting = false
+  $.clock.after(0, () => {
+    void quietly($, 'label', confirmStart($, found, hint))
+  })
 }
 
 // Every tool call reports the effort, so only a change is written, and drawn.
@@ -554,6 +592,15 @@ export const register: Register = (on, options) => {
   })
 
   on('classic.SessionStart', ($, e, next) => {
+    // The process starts with this session, in a mode known without a prompt until the person has
+    // had the time to change it.
+    if (e.source === 'startup' && marked === null) {
+      isStarting = true
+      $.clock.after(START_MS, () => {
+        isStarting = false
+      })
+    }
+
     void quietly($, 'session', switchSession($, e.session_id))
     void quietly($, 'session', adoptSession($, e.transcript_path))
     void quietly($, 'model', syncModel($))
@@ -735,6 +782,7 @@ export const register: Register = (on, options) => {
     })
 
     marked = block.read
+    noteFirstReading($, block.read, e.props.hint)
 
     return StatusBlock($.ui.resolve(e), block)
   })
