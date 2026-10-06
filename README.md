@@ -18,6 +18,7 @@ together, and update them as they change.
 | **vim** | A vim command line: `:w` and `:e` keep a draft per session, `:q` quits, any other name runs that slash command, with Tab completion. | [README](mods/vim/README.md) · [commands](mods/vim/README.md#commands) · [drafts](mods/vim/README.md#drafts) |
 | **attachments** | The draft's attachments as chips above the prompt: pasted pictures and texts, `@`-mentioned files and folders, and with `issues` each `@#N` issue, with a glyph for its type, its path and what it is, and a `×` to take it out. | [README](mods/attachments/README.md) · [what a chip shows](mods/attachments/README.md#what-a-chip-shows) · [limits](mods/attachments/README.md#limits) |
 | **issues** | The repository's GitHub issues as `@#` is typed: a list above the prompt filtered by number or title, picked with a click or Ctrl+X Tab, and each `@#N` sent with the issue for the model to read. | [README](mods/issues/README.md) · [picking one](mods/issues/README.md#picking-one) · [what the model reads](mods/issues/README.md#what-the-model-reads) |
+| **stfu** | The line drawn while Claude works without its whimsical word: only the time, tokens and thinking, where Claude Code draws them. The closing `Baked for 3s` reads `Worked for 3s`. | [README](mods/stfu/README.md) · [why a blank and a verb](mods/stfu/README.md#why-a-blank-and-a-verb) |
 
 Each works alone, and they fit together: `vim` draws its line in `statusline`'s bar, `syntax`
 reads the editor's mode from `statusline` to color a shell command, `attachments` shows each issue
@@ -33,6 +34,7 @@ claude plugin install syntax@claude-x
 claude plugin install vim@claude-x
 claude plugin install attachments@claude-x
 claude plugin install issues@claude-x            # needs gh, logged in
+claude plugin install stfu@claude-x
 ```
 
 `claude plugin marketplace update claude-x` takes up new versions; `claude plugin disable <mod>@claude-x`

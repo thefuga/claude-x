@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "claude-x",
-  "description": "Erick Fuga's Claude Code mods: a vim-style status bar, colors for the draft, a vim command line, the draft's attachments as chips, and the repository's GitHub issues found with @#.",
+  "description": "Erick Fuga's Claude Code mods: a vim-style status bar, colors for the draft, a vim command line, the draft's attachments as chips, the repository's GitHub issues found with @#, and the spinner without its whimsical word.",
   "owner": {
     "name": "Erick Fuga",
     "url": "https://thefuga.dev"
@@ -56,6 +56,16 @@
       },
       "homepage": "https://github.com/thefuga/claude-x/tree/main/mods/issues",
       "source": "./mods/issues"
+    },
+    {
+      "name": "stfu",
+      "description": "Takes the whimsical word out of the line drawn while Claude works and out of the one that closes a turn, keeping the elapsed time, tokens and thinking where Claude Code draws them.",
+      "author": {
+        "name": "Erick Fuga",
+        "url": "https://thefuga.dev"
+      },
+      "homepage": "https://github.com/thefuga/claude-x/tree/main/mods/stfu",
+      "source": "./mods/stfu"
     }
   ]
 }

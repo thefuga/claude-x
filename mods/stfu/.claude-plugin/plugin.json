@@ -1,0 +1,11 @@
+{
+  "name": "stfu",
+  "version": "0.1.0",
+  "description": "Drops the whimsical word from the line that runs while Claude works and from the one that closes a turn, leaving the elapsed time, tokens and duration where Claude Code draws them.",
+  "author": {
+    "name": "Erick Fuga",
+    "url": "https://thefuga.dev"
+  },
+  "homepage": "https://github.com/thefuga/claude-x/tree/main/mods/stfu",
+  "repository": "https://github.com/thefuga/claude-x"
+}
