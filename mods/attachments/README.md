@@ -2,7 +2,8 @@
 
 The draft's attachments as chips above Claude Code's prompt. Each pasted picture, pasted text and
 `@`-mentioned file or folder gets a chip: a glyph for its type, its path and what it is, and a `×`
-that takes it out of the draft.
+that takes it out of the draft. With the [issues](../issues/README.md) mod, so does each GitHub
+issue the draft names with `@#N`.
 
 ![A picture pasted and three files mentioned, each a chip above the prompt with its type's glyph, its path, its size or lines; the × on one takes its mention out of the draft](../../docs/attachments.gif)
 
@@ -23,6 +24,8 @@ It has no options: disable it (`claude plugin disable attachments@claude-x`) to 
 
 - [vim](../vim/README.md): its command line's field is in the same band above the prompt. The chips
   stand over it, and the line opens as before.
+- [issues](../issues/README.md): each `@#N` in the draft is a chip once that mod has loaded the
+  issue, read from its state. Without it, `@#N` is plain text and has none.
 - [statusline](../statusline/README.md) and [syntax](../syntax/README.md): nothing is shared. A `×`
   leaves the draft uncolored until the next typed key, as `:e` does.
 
@@ -36,6 +39,7 @@ None of them is needed.
 | A long paste, `[Pasted text #N +L lines]` | `Pasted text #N` | Lines |
 | A mentioned file, `@path` or `@"a path"` | As typed, `~` for the home folder | By its type: lines and size of a text, width x height and size of a picture, frame, length and size of a video, length and size of a sound, the size of anything else |
 | A mentioned folder | As typed | Entries |
+| A GitHub issue or pull request, `@#N`, with the issues mod | `#N` and its title | Closed or merged, once it is |
 
 A path longer than 44 characters keeps its first folders and its end: `/tmp/claude-1000/…/images/1.png`.
 A mention of something that is not on disk (a typo, an agent, an MCP resource) has no chip, and one
@@ -61,6 +65,8 @@ terminal font without them draws a box.
 | Folder | `nf-fa-folder_o` | — |
 | Pasted text | `nf-fa-clipboard` | — |
 | Unknown | `nf-fa-file_o` | — |
+| Issue, open or closed | `nf-oct-issue_opened` green, `nf-oct-issue_closed` purple | Its state |
+| Pull request, open, merged or closed | `nf-oct-git_pull_request` green, `nf-oct-git_merge` purple, `nf-oct-git_pull_request_closed` red | Its state |
 
 A file whose name tells nothing (no extension, or one not in the list) is told by its first bytes:
 a picture's, a PDF's, an archive's, a video's or a sound's header, a NUL byte for a binary, and
@@ -68,8 +74,8 @@ text otherwise. That needs the file read, so one over 4 MB is left unknown.
 
 ## Taking one out
 
-Click a chip's `×`: its placeholder or mention leaves the draft, and a pasted picture or text leaves
-with its placeholder, so it is not sent. Claude Code then puts the cursor at the end of the draft.
+Click a chip's `×`: its placeholder, mention or `@#N` leaves the draft, and a pasted picture or text
+leaves with its placeholder, so it is not sent. Claude Code then puts the cursor at the end of the draft.
 
 The click needs the fullscreen renderer (`/tui fullscreen`), the one that reports the mouse. Where
 the vim mod is installed its command line holds the band's keyboard, so the `×` is for the mouse.

@@ -1,0 +1,12 @@
+{
+  "name": "issues",
+  "version": "0.1.0",
+  "description": "Finds the repository's GitHub issues as @# is typed in the prompt, as opencode.vim does: a list above the prompt filtered by number or title, picked with a click or Ctrl+X Tab, and each @#N sent with the issue for the model to read.",
+  "author": {
+    "name": "Erick Fuga",
+    "url": "https://thefuga.dev"
+  },
+  "homepage": "https://github.com/thefuga/claude-x/tree/main/mods/issues",
+  "repository": "https://github.com/thefuga/claude-x",
+  "types": "./types/index.d.ts"
+}

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Chip, FileType } from '../types'
+import type { Chip, FileType, IssueReference } from '../types'
 import { marksOf, withoutMark } from './draft'
 import type { Mark, Mention } from './draft'
 import {
@@ -19,6 +19,7 @@ import {
   typeOfName,
   wantsBytes,
 } from './files'
+import { issueChipOf } from './issues'
 import { Chips } from './view'
 
 // How often the draft is read: a paste, a completion or a history recall changes it with no event.
@@ -30,13 +31,16 @@ const KEPT = 256
 type Described = { type: FileType; facts: string[] }
 
 const chips = atom({ plugin: 'attachments', key: 'chips' } as const, [])
+// The issues the draft names, as the issues mod has loaded them; none without that mod.
+const issueReferences = atom({ plugin: 'issues', key: 'references' } as const, [])
 
 let poll: Timer | undefined
 let home: string | undefined
 // The folder this session's pasted pictures are saved in, where it could be worked out.
 let images: string | null = null
-// The draft last read, the chips last written for it, and which reading is the latest: a reading
-// overtaken by a newer one while it looked at the disk writes nothing.
+// The draft last read with the issues loaded for it, the chips last written for them, and which
+// reading is the latest: a reading overtaken by a newer one while it looked at the disk writes
+// nothing.
 let seenDraft: string | undefined
 let seenChips: string | undefined
 let readings = 0
@@ -128,7 +132,7 @@ const mentionChip = async ($: EngineInterface, mark: Extract<Mark, { kind: 'ment
   return null
 }
 
-const chipOf = async ($: EngineInterface, mark: Mark): Promise<Chip | null> => {
+const chipOf = async ($: EngineInterface, mark: Mark, named: readonly IssueReference[]): Promise<Chip | null> => {
   if (mark.kind === 'image') {
     return imageChip($, mark)
   }
@@ -137,20 +141,28 @@ const chipOf = async ($: EngineInterface, mark: Mark): Promise<Chip | null> => {
     return mentionChip($, mark)
   }
 
+  // An issue is a chip once the issues mod has loaded it.
+  if (mark.kind === 'issue') {
+    const reference = named.find(({ number }) => number === mark.number)
+
+    return reference === undefined ? null : issueChipOf(reference, mark.text, mark.at)
+  }
+
   return { type: 'paste', name: `Pasted text #${mark.number}`, facts: mark.lines === null ? [] : [counted(mark.lines, 'line', 'lines')], mark: mark.text, at: mark.at }
 }
 
 const sync = async ($: EngineInterface) => {
-  const { text } = await $.prompt.read()
+  const [{ text }, named] = await Promise.all([$.prompt.read(), read($, issueReferences)])
+  const draft = JSON.stringify([text, named])
 
-  if (text === seenDraft) {
+  if (draft === seenDraft) {
     return
   }
 
-  seenDraft = text
+  seenDraft = draft
   readings += 1
   const reading = readings
-  const found = (await Promise.all(marksOf(text).map(mark => chipOf($, mark)))).filter(chip => chip !== null)
+  const found = (await Promise.all(marksOf(text).map(mark => chipOf($, mark, named)))).filter(chip => chip !== null)
   const seen = JSON.stringify(found)
 
   if (reading === readings && seen !== seenChips) {

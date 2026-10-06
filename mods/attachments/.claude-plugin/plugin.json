@@ -1,7 +1,7 @@
 {
   "name": "attachments",
   "version": "0.1.0",
-  "description": "The draft's attachments as chips above the prompt: each pasted picture, pasted text and @-mentioned file or folder with a glyph for its type, its path and what it is, and a × to take it out of the draft.",
+  "description": "The draft's attachments as chips above the prompt: each pasted picture, pasted text, @-mentioned file or folder and, with the issues mod, @# issue, with a glyph for its type, its path and what it is, and a × to take it out of the draft.",
   "author": {
     "name": "Erick Fuga",
     "url": "https://thefuga.dev"

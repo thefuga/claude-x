@@ -1,7 +1,8 @@
 // The attachments of a draft as Claude Code writes them in the prompt: `[Image #N]` for a pasted
 // or dropped picture, `[Pasted text #N +L lines]` for a paste long enough to be folded, and `@path`
-// (or `@"a path"`) for a mentioned file or folder, a line range after it (`#L10-20`) allowed. What
-// each one is on disk is the hooks' business; here they are only found, and taken out again.
+// (or `@"a path"`) for a mentioned file or folder, a line range after it (`#L10-20`) allowed; and
+// `@#N` for a GitHub issue, as the issues mod writes it. What each one is, on disk or on GitHub, is
+// the hooks' business; here they are only found, and taken out again.
 
 // Where an attachment stands in the draft (`text` from `at`) and what it is there. A mention is
 // named as typed, without its quotes; `path` is the file, without the line range. A mention that
@@ -10,11 +11,14 @@ export type Mark =
   | { kind: 'image'; text: string; at: number; number: number }
   | { kind: 'paste'; text: string; at: number; number: number; lines: number | null }
   | { kind: 'mention'; text: string; at: number; name: string; path: string; bare: Mention | null }
+  | { kind: 'issue'; text: string; at: number; number: number }
 
 export type Mention = { text: string; name: string; path: string }
 
 // An `@` opens a mention only at the start of the draft or after a space, so an address is none.
-const MARKS = /\[Image #(\d+)\]|\[Pasted text #(\d+)(?: \+(\d+) lines?)?\]|(?<=^|\s)@("[^"\n]+"|[^\s"]+)/g
+// An issue is `@#N` standing alone, as the issues mod reads it: `(@#2)` is one, `me@#2` and `@#2a`
+// are none.
+const MARKS = /\[Image #(\d+)\]|\[Pasted text #(\d+)(?: \+(\d+) lines?)?\]|(?<![A-Za-z0-9_])@#([1-9]\d*)(?![A-Za-z0-9_])|(?<=^|\s)@("[^"\n]+"|[^\s"]+)/g
 const RANGE = /#L\d+(?:-\d+)?$/
 const STOP = /[.,;:!?)\]}'`]+$/
 
@@ -22,11 +26,15 @@ const mentionOf = (text: string, name: string): Mention => ({ text, name, path: 
 
 export const marksOf = (draft: string): Mark[] =>
   [...draft.matchAll(MARKS)].flatMap((match): Mark[] => {
-    const [text, image, paste, lines, mention] = match
+    const [text, image, paste, lines, issue, mention] = match
     const at = match.index
 
     if (image !== undefined) {
       return [{ kind: 'image', text, at, number: Number(image) }]
+    }
+
+    if (issue !== undefined) {
+      return [{ kind: 'issue', text, at, number: Number(issue) }]
     }
 
     if (paste !== undefined) {

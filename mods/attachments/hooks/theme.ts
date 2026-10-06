@@ -17,6 +17,12 @@ export const GLYPHS: Record<FileType, string> = {
   folder: '\uf114', // nf-fa-folder_o
   paste: '\uf0ea', // nf-fa-clipboard
   unknown: '\uf016', // nf-fa-file_o
+  // GitHub's own: Octicons' issue and pull request marks, by state.
+  issue: '\uf41b', // nf-oct-issue_opened
+  'issue-closed': '\uf41d', // nf-oct-issue_closed
+  pull: '\uf407', // nf-oct-git_pull_request
+  'pull-merged': '\uf419', // nf-oct-git_merge
+  'pull-closed': '\uf4dc', // nf-oct-git_pull_request_closed
 }
 
 // Every color is a key of Claude Code's theme, so the chips follow whatever `/theme` picks, light
@@ -38,5 +44,11 @@ export const theme = {
     folder: 'claude',
     paste: 'warning',
     unknown: 'inactive',
+    // Green while open, purple once done, red for a pull request closed unmerged, as GitHub has them.
+    issue: 'success',
+    'issue-closed': 'autoAccept',
+    pull: 'success',
+    'pull-merged': 'autoAccept',
+    'pull-closed': 'error',
   } satisfies Record<FileType, string>,
 }

@@ -1,12 +1,28 @@
 import type { FsEntry, FsStat, On } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
-import type { Mounted } from 'claude-code/testing'
+import type { Mounted, Plugin } from 'claude-code/testing'
+
+import type { IssueReference } from '../types'
 
 const FULLSCREEN = { columns: 120, rows: 40, isFullscreen: true }
 const BAND = { plugin: 'attachments', component: 'AbovePrompt', viewport: FULLSCREEN, requestId: 'above-prompt' } as const
 const START = { cwd: '/home/me/project', surface: 'terminal', isInteractive: true } as const
 const SESSION = 'a1b2c3d4-0000-4000-8000-000000000001'
 const IMAGES = `/tmp/claude-1000/-home-me-project/${SESSION}/images`
+
+// The issues mod as far as these tests go: the issues it has loaded for the draft, set by a command.
+const ISSUES: Plugin = {
+  name: 'issues',
+  register(on) {
+    on('command.run', { command: 'loaded' }, async ($, e) => {
+      await $.state.set({ plugin: 'issues', key: 'references' }, JSON.parse(e.args))
+
+      return {}
+    })
+  },
+}
+const LOADED = { command: 'loaded', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } } as const
+const loaded = (references: IssueReference[]) => ({ ...LOADED, args: JSON.stringify(references) })
 
 // What the band above the prompt is told: at 40 rows, 13 rows beside a one-row draft.
 const BAND_PROPS = {
@@ -185,6 +201,45 @@ describe('attachments', () => {
     await clock.advance(250)
 
     expect(await texts(above)).toEqual(['\uf0f6', 'b.md', '1 line · 2 B', 'beneath'])
+  })
+
+  test('shows each issue the draft names once the issues mod has loaded it, by its state', { plugins: [ISSUES] }, async ($, on) => {
+    const clock = mock.clock(on)
+    const held = world(on)
+    await $.session.start(START)
+    await clock.settle()
+    const above = await $.ui.mount({ ...BAND, surface: 'terminal', props: BAND_PROPS })
+
+    await draft(held, clock, 'fix @#320 like @#12 and @#212, not @#5')
+
+    expect(await texts(above), 'none is loaded yet').toEqual(['beneath'])
+
+    // Loaded while the draft stays as it was.
+    await $.command.run(
+      loaded([
+        { number: 320, title: 'Missing ownership check on /users/:userId/{personal-records,goals,achievements}', state: 'OPEN', isPull: false },
+        { number: 12, title: 'An old crash', state: 'CLOSED', isPull: false },
+        { number: 212, title: 'Align agent eligibility', state: 'MERGED', isPull: true },
+      ]),
+    )
+    await clock.advance(250)
+
+    expect(await texts(above)).toEqual([
+      '\uf41b',
+      '#320 Missing ownership check on /users/:use…',
+      '\uf41d',
+      '#12 An old crash',
+      'closed',
+      '\uf419',
+      '#212 Align agent eligibility',
+      'merged',
+      'beneath',
+    ])
+
+    await above.press({ key: 'remove:4' })
+
+    expect(held.box.text, 'its × takes the reference out').toBe('fix like @#12 and @#212, not @#5')
+    expect(held.logs).toEqual([])
   })
 
   test('reads a file once for as long as it stays the same, and a video only through ffprobe', async ($, on) => {

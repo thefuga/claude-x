@@ -32,6 +32,19 @@ describe('draft', () => {
     ])
   })
 
+  test('finds an issue the draft names, @#N standing alone, as the issues mod reads it', () => {
+    const draft = 'fix @#320, then (@#12) and me@#5, @#7a and @#rel'
+
+    expect(marksOf(draft).map(({ kind, text }) => [kind, text])).toEqual([
+      ['issue', '@#320'],
+      ['issue', '@#12'],
+      ['mention', '@#7a'],
+      ['mention', '@#rel'],
+    ])
+    expect(marksOf('@#320')).toEqual([{ kind: 'issue', text: '@#320', at: 0, number: 320 }])
+    expect(withoutMark('fix @#320 and @#12', '@#320', 4)).toBe('fix and @#12')
+  })
+
   test('takes an attachment out with the space after it, or before it where none follows', () => {
     expect(withoutMark('see @a.md and @b.md', '@a.md', 4)).toBe('see and @b.md')
     expect(withoutMark('see @a.md', '@a.md', 4)).toBe('see')
