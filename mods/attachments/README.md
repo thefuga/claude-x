@@ -5,7 +5,7 @@ The draft's attachments as chips above Claude Code's prompt. Each pasted picture
 that takes it out of the draft. With the [issues](../issues/README.md) mod, so does each GitHub
 issue the draft names with `@#N`.
 
-![A picture pasted and three files mentioned, each a chip above the prompt with its type's glyph, its path, its size or lines; the × on one takes its mention out of the draft](../../docs/attachments.gif)
+![A picture pasted and two files mentioned, each a chip above the prompt with its type's glyph, its path, its size or lines; the × on one takes its mention out of the draft](../../docs/attachments.gif)
 
 The chips follow the draft. Claude Code still writes `[Image #1]`, `[Pasted text #2 +30 lines]` and
 `@path` in the prompt and sends what the prompt holds; a chip comes and goes with its placeholder or

@@ -8,9 +8,9 @@
 
 ## Layout
 
-- The repo is a Claude Code plugin marketplace (`claude-x`). `.claude-plugin/marketplace.json` lists one plugin per folder under `mods/`, by relative path. A new mod gets a folder there, an entry in the marketplace, a row in the README's mod table, and a README of its own.
+- The repo is a Claude Code plugin marketplace (`claude-x`). `.claude-plugin/marketplace.json` lists one plugin per folder under `mods/`, by relative path. A new mod gets a folder there, an entry in the marketplace, a section in the README with a GIF of the mod alone, and a README of its own.
 - A mod is `.claude-plugin/plugin.json` (name, version, description, options as `userConfig`), `hooks/hooks.json` (the module to load), `hooks/register.ts(x)`, plain modules beside it in `hooks/`, `types/index.d.ts`, `tests/` and `README.md`.
-- READMEs: the root `README.md` is a map (what the repo is, the mod table with links, install). Each mod's README opens with what it does, then `## Install` and `## Works with`; the root table links to its sections by anchor, so keep those headings stable.
+- READMEs: the root `README.md` is a map (what the repo is, a section per mod with its GIF in `docs/<mod>.gif` and links, install). Each mod's README opens with what it does, then `## Install` and `## Works with`; the root sections link to its headings by anchor, so keep those headings stable.
 
 ## Live Loading
 
